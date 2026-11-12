@@ -49,27 +49,74 @@ You can also press **F5** and pick *Run APEX GARAGE* — it starts the server an
 
 ### Drive mode
 
-Press **Drive** in the top bar and pick a location. The car you built is what you drive: power,
-weight, tyres, drivetrain, aero and suspension all change how it accelerates and handles.
+Press **Drive** in the top bar. Pick a location and a transmission, then go. The car you built
+is what you drive: power, weight, tyres, drivetrain, turbo lag, aero and suspension all change
+how it accelerates, grips and slides.
 
 | Action | Key |
 | --- | --- |
 | Throttle | `W` or `↑` |
-| Brake, then reverse when stopped | `S` or `↓` |
+| Brake (automatic: also reverse once stopped) | `S` or `↓` |
 | Steer | `A` `D` or `←` `→` |
-| Handbrake (also relaxes stability control so you can drift) | `Space` |
+| Handbrake — also starts a drift | `Space` |
+| Shift up / shift down (semi-automatic and manual) | `E` / `Q` |
+| Clutch (manual only — hold it while you shift) | `Left Shift` |
+| Cycle transmission mode | `T` |
 | Change camera (chase, close, hood, overhead) | `C` |
 | Put the car back on the road | `R` |
-| Return to the garage | `Esc` |
+| Return to the garage (banks your score) | `Esc` |
 
-- **Apex Raceway** — a 1.5 km circuit in daylight with kerbs, a grandstand and lap timing
-  (current, last and best lap). Grass is slow and slippery.
+**Locations**
+
+- **Midnight Expressway** — a 6 km four-lane expressway loop at night with AI traffic, a
+  suspension bridge over a river, two tunnels, overhead signs and a city on both sides.
+  Traffic keeps a safe gap, changes lane to pass slower vehicles and reacts to you.
+- **Apex Raceway** — a 1.5 km circuit in daylight with lap timing. Grass is slow and slippery.
 - **Neon District** — a night-time city grid to free-roam, with solid buildings.
 
-Drive mode needs a keyboard; there are no on-screen touch controls.
+**Transmissions**
 
-Tip: fit the *Straight Pipe* exhaust and a *Big Single* turbo, rev to the limiter and lift off
-to hear compressor flutter and see flames from the tips.
+- **Automatic** — the car shifts for you.
+- **Semi-automatic** — you shift with `E` / `Q`; no clutch.
+- **Manual** — hold `Left Shift` (clutch) and press `E` / `Q`. Shifting without the clutch is
+  refused. With the clutch in, or in neutral, the engine revs freely.
+
+In both manual modes the gears are R · N · 1–6, the engine hits its rev limiter if you do not
+shift up, and a downshift that would over-rev the engine is refused. Select R from a standstill
+by shifting down past neutral. The dashboard shows gear, rpm and speed; the gear indicator
+lights up when it is time to shift.
+
+**Scoring**
+
+| Manoeuvre | Points |
+| --- | --- |
+| Close overtake (under 1.6 m of clearance) | 60–300, more the tighter and faster it is |
+| Weave (close overtakes on alternate sides within 3 s) | +150 |
+| Clean overtake | +25 |
+| High speed (above 140 km/h on the expressway, 170 elsewhere) | points every second |
+| Drift | angle × speed, banked when the slide ends cleanly |
+
+Every scoring manoeuvre raises the multiplier (up to ×8). It lasts six seconds and is renewed
+by the next manoeuvre. Hitting a wall resets the multiplier and cancels the current drift.
+Hitting traffic ends the run and banks the points you had. Leaving with `Esc` banks the run too.
+
+The **leaderboard** in the Drive menu keeps the ten best runs per map with driver name and
+car, and highlights your personal best. Set your driver name there; several people can use the
+same computer under different names. Scores are stored in the browser on that computer — there
+is no online ranking. Rows marked *target* are reference scores to aim for, not real players.
+
+**Handling notes**
+
+- Steering always takes priority: the brakes (ABS) and engine (traction control) only get the
+  grip that cornering is not using, so you can steer while braking or accelerating.
+- To drift, flick the handbrake while turning and stay on the throttle; counter-steer to hold
+  it. Powerful rear-drive cars can also be kicked sideways with full throttle and full lock in
+  first or second gear.
+- Tyres matter: semi-slicks grip hardest and respond sharply, touring tyres slide earlier,
+  drag radials launch hard but corner poorly. FWD pushes wide under power, RWD rotates,
+  AWD puts power down early.
+
+Drive mode needs a keyboard; there are no on-screen touch controls.
 
 ## What is in the garage
 
@@ -114,8 +161,11 @@ car-customizer/
 │   ├── engine3d.js     Engines, turbos, superchargers, intakes, exhaust piping
 │   ├── car.js          Assembles the car; stance, x-ray, lights, flames
 │   ├── audio.js        Synthesised engine, starter, turbo, blower, exhaust and road sound
-│   ├── world.js        Drivable locations: race circuit and night city
-│   ├── drive.js        Drive mode: vehicle physics, gearbox, cameras, lap timing
+│   ├── designs.js      Individual grille / lamp / bumper designs for all 32 cars
+│   ├── world.js        Drivable locations: expressway, race circuit, night city
+│   ├── traffic.js      AI traffic for the expressway
+│   ├── score.js        Points, combo multiplier, records and leaderboard
+│   ├── drive.js        Drive mode: vehicle physics, transmissions, cameras, lap timing
 │   ├── stats.js        Performance model and pricing
 │   └── ui.js           Panels, stats bars, tachometer
 ├── vendor/three/       Three.js r170 (MIT licence) — bundled for offline use
@@ -127,6 +177,7 @@ car-customizer/
 
 Everything is data-driven. To add a car, copy an entry in `CARS` inside `js/data.js` and
 change its dimensions and profile; the body, kits, wheels and engine bay adapt automatically.
+Give it a face by adding an entry with the same id in `js/designs.js` (grille, lamps, vents).
 New engines, rims, kits or exhausts are added the same way in their respective lists.
 
 ## Notes
@@ -134,7 +185,7 @@ New engines, rims, kits or exhausts are added the same way in their respective l
 - The cars are **procedurally generated approximations** built from each model's real
   dimensions and proportions — they are recognisable in stance and silhouette but are not
   licensed, scan-accurate replicas. Brand and product names are used for identification only.
-- Saved cars are stored in your browser (localStorage) on this computer; clearing site data
+- Saved cars, scores and settings are stored in your browser (localStorage) on this computer; clearing site data
   removes them.
 - Sound needs a user gesture (browser policy), so audio starts when you first press
   **ENGINE START**.

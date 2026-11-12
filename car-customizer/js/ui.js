@@ -175,7 +175,7 @@ export function initUI(app) {
           h('tr', { class: 'total' }, h('td', {}, 'Total'), h('td', {}), h('td', {}, money(s.total)))),
         h('button', { class: 'btn wide-btn', style: 'margin-top:14px', onclick: app.copySheet }, 'Copy build sheet'),
         h('button', { class: 'btn wide-btn', onclick: app.save }, 'Save build'),
-        h('button', { class: 'btn wide-btn btn-drive', onclick: () => document.getElementById('driveMenu').classList.add('show') }, 'Drive this car'),
+        h('button', { class: 'btn wide-btn btn-drive', onclick: () => app.openDriveMenu() }, 'Drive this car'),
         h('button', { class: 'btn wide-btn', onclick: app.reset }, 'Reset to factory'),
       ];
     },

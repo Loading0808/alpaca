@@ -8,8 +8,10 @@ export const PROFILE_DEFAULTS = {
   crown: 0.06,       // centreline height above the shoulder line
   shoulder: 0.075,   // greenhouse inset from the body side
   tumble: 0.42,      // side glass lean-in
-  noseRound: 0.25, noseTaper: 0.2,
-  tailRound: 0.22, tailTaper: 0.15,
+  noseRound: 0.42, noseTaper: 0.24,
+  tailRound: 0.3, tailTaper: 0.17,
+  haunch: 0.022, fender: 0.02,   // wing swell in plan view / minimum crown over the wheels
+  bowF: 0.2, bowR: 0.14,          // how far the windscreen / rear window corners are swept round
   frontRise: 0.04, rearRise: 0.1,
   roofDrop: 0.04, rearPow: 0.9, cabTaper: 0.12,
   plan: [0.93, 1.0, 0.975, 0.99, 0.9], // width factor: tail, rear axle, middle, front axle, nose

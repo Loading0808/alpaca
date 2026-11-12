@@ -9,6 +9,7 @@
 // ground at the centre of the wheelbase.
 import * as THREE from 'three';
 import { PROFILE_DEFAULTS } from './data.js';
+import { DESIGNS } from './designs.js';
 import { MeshBuilder, loft, pchip, lerp, clamp, smooth, sq, V, gridGeometry } from './geo.js';
 
 const TS = [0.07, 0.16, 0.27, 0.38, 0.48, 0.57, 0.63, 0.66, 0.69, 0.72, 0.78, 0.85, 0.93, 1]; // side wall sample heights
@@ -24,7 +25,9 @@ export function makeSurface(car) {
   const cowlX = X(P.cowl), wsX = X(P.wsTop), rwX = X(P.rwTop), deckX = X(P.deck);
   const R = car.tireR, Ra = R + 0.055, wcY = R, gc = car.gc;
 
-  const hw = pchip([tailX, xr, 0, xf, noseX], P.plan.map(v => v * W / 2));
+  const hwBase = pchip([tailX, xr, 0, xf, noseX], P.plan.map(v => v * W / 2));
+  // wings swell out over the wheels and the body pulls in at the doors, like a real car in plan view
+  const hw = x => hwBase(x) + P.haunch * (Math.exp(-sq((x - xf) / 0.55)) + Math.exp(-sq((x - xr) / 0.6)) - 0.55);
   const floor0 = x => {
     if (x > xf + Ra) return gc + P.frontRise * smooth((x - xf - Ra) / (noseX - xf - Ra));
     if (x < xr - Ra) return gc + P.rearRise * smooth((xr - Ra - x) / (xr - Ra - tailX));
@@ -38,11 +41,11 @@ export function makeSurface(car) {
   };
   // shoulder line, raised into fender humps where the hood is lower than the arches
   const need = xa => Math.max(0, wcY + Ra + 0.085 - (Hc0(xa) - P.crown));
-  const bF = need(xf), bR = need(xr), gauss = u => Math.exp(-u * u);
+  const bF = Math.max(P.fender, need(xf)), bR = Math.max(P.fender, need(xr)), gauss = u => Math.exp(-u * u);
   const ys0 = x => Hc0(x) - P.crown + bF * gauss((x - xf) / (Ra * 1.15)) + bR * gauss((x - xr) / (Ra * 1.15));
 
   // side wall cross-section: tucked sills, widest at mid height, rounded shoulders
-  const pf = t => t < 0.3 ? 1 - 0.05 * sq(1 - t / 0.3) : t > 0.72 ? 1 - 0.12 * sq((t - 0.72) / 0.28) : 1;
+  const pf = t => t < 0.36 ? 1 - 0.075 * sq(1 - t / 0.36) : t > 0.66 ? 1 - 0.15 * Math.pow((t - 0.66) / 0.34, 1.7) : 1;
   // sculpted door surface: a scallop that ends in a crisp shoulder crease, fading out into the wheel-arch haunches
   const scT = t => t < 0.3 || t > 0.72 ? 0 : t < 0.66 ? smooth((t - 0.3) / 0.36) : 1 - smooth((t - 0.66) / 0.06);
   const scX = x => P.scallop * smooth((x - (xr + Ra * 0.75)) / 0.45) * smooth((xf - Ra * 0.9 - x) / 0.35);
@@ -51,7 +54,7 @@ export function makeSurface(car) {
   const hoodB = x => P.hoodBulge * smooth((x - cowlX) / 0.25) * smooth((noseX - 0.3 - x) / 0.5);
   const topY0 = (x, z) => {
     const s = ys0(x), u = clamp(Math.abs(z) / zs0(x), 0, 1);
-    return s + (Hc0(x) - s) * (1 - u * u * u * u) + (x > cowlX ? hoodB(x) * (1 - smooth((u - 0.3) / 0.14)) : 0);
+    return s + (Hc0(x) - s) * (1 - Math.pow(u, 2.6)) + (x > cowlX ? hoodB(x) * (1 - smooth((u - 0.3) / 0.14)) : 0);
   };
 
   // rounding of the nose and tail
@@ -94,7 +97,7 @@ export function makeSurface(car) {
   S.ends = { 1: mkEnd(noseX, P.noseBulge), [-1]: mkEnd(tailX, P.tailBulge) };
   S.capHalf = (end, Y) => {
     const e = S.ends[end];
-    return Y <= e.b ? S.sideZ(e.x, Y) : e.zs * Math.pow(clamp(1 - (Y - e.b) / Math.max(1e-4, e.h - e.b), 0, 1), 0.25);
+    return Y <= e.b ? S.sideZ(e.x, Y) : e.zs * Math.pow(clamp(1 - (Y - e.b) / Math.max(1e-4, e.h - e.b), 0, 1), 1 / 2.6);
   };
   S.capX = (end, Y, Z) => {
     const e = S.ends[end];
@@ -108,7 +111,7 @@ export function makeSurface(car) {
 function stations(S) {
   const { noseX, tailX, xf, xr, Ra } = S, xs = [];
   for (let x = tailX; x <= noseX + 1e-6; x += 0.04) xs.push(x);
-  for (let d = 0; d <= 0.27; d += 0.0125) { xs.push(noseX - d, tailX + d); }
+  for (let d = 0; d <= 0.5; d += 0.0125) { xs.push(noseX - d, tailX + d); }
   for (const xa of [xf, xr]) {
     for (let i = 1; i < 36; i++) xs.push(xa + Ra * Math.cos(Math.PI * i / 36));
     xs.push(xa + Ra - 0.002, xa + Ra + 0.002, xa - Ra + 0.002, xa - Ra - 0.002);
@@ -169,13 +172,15 @@ export function buildShell(S, M) {
   const four = S.car.doors === 4, bpX = lerp(S.wsX, S.rwX, four ? 0.46 : 0.6), cpX = lerp(S.rwX, S.wsX, four ? 0.04 : 0.1);
   gx.push(S.cowlX, S.wsX, S.rwX, bpX - 0.035, bpX + 0.035, cpX);
   gx.sort((a, b) => a - b);
-  const NR = 7, P = S.P;
+  const NR = 9, P = S.P, midX = (S.wsX + S.rwX) / 2;
   const gHalf = x => {
-    const g = S.gb(x), y0 = S.topY0(x, g) - 0.012, top = S.roofY(x), hc = Math.max(0, top - y0);
-    const yE = top - 0.06 * Math.min(1, hc / 0.3), hs = Math.max(0, yE - y0), tum = P.tumble;
+    // the screens are bowed in plan view: their corners sit further back (front) / forward (rear) than the centre
+    const bow = x > midX ? P.bowF : -P.bowR, topAt = u => S.roofY(x + bow * u * u);
+    const g = S.gb(x), y0 = S.topY0(x, g) - 0.012, top = topAt(0), topE = topAt(1), hc = Math.max(0, topE - y0);
+    const yE = topE - 0.06 * Math.min(1, hc / 0.3), hs = Math.max(0, yE - y0), tum = P.tumble;
     const zr = g - hs * tum - 0.03 * Math.min(1, hs / 0.15), yr = y0 + hs * 0.99;
     const p = [[y0, g], [y0 + 0.08 * hs, g - 0.08 * hs * tum], [y0 + 0.45 * hs, g - 0.45 * hs * tum], [y0 + 0.86 * hs, g - 0.86 * hs * tum], [yr, zr]];
-    for (let k = 1; k <= NR; k++) { const z = zr * (1 - k / NR); p.push([yr + (top - yr) * (1 - sq(z / zr)), z]); }
+    for (let k = 1; k <= NR; k++) { const z = zr * (1 - k / NR), u = zr > 1e-4 ? z / zr : 0; p.push([yr + (Math.max(yr, topAt(u)) - yr) * (1 - u * u), z]); }
     return p.map(([y, z]) => S.pt(x, y, z));
   };
   const gHalves = gx.filter((x, i) => i === 0 || x - gx[i - 1] > 0.002).map(x => ({ x, h: gHalf(x) }));
@@ -214,17 +219,6 @@ export function patchCap(S, end, z0, z1, yA, yB, off = 0.006, nu = 12, nv = 6) {
   return gridGeometry((u, v) => { const z = lerp(z0, z1, u), y = lerp(yA(u), yB(u), v); return V(S.capX(end, y, z) + end * off, y, z); }, nu, nv, 8, 'zy');
 }
 
-const FRONT_STYLES = {
-  gtr: { c: [[-0.55, 0.55, 0.06, 0.6]], m: [[0.66, 0.9, 0.1, 0.34]] },
-  slot: { c: [[-0.6, 0.6, 0.08, 0.3]], m: [[0.68, 0.9, 0.1, 0.3]] },
-  tri: { c: [[-0.3, 0.3, 0.08, 0.5]], m: [[0.42, 0.9, 0.1, 0.42]] },
-  kidney: { c: [[-0.5, 0.5, 0.05, 0.22]], m: [[0.03, 0.3, 0.28, 0.86], [0.6, 0.9, 0.08, 0.3]] },
-  wide: { c: [[-0.9, 0.9, 0.5, 0.84], [-0.6, 0.6, 0.08, 0.36]], m: [] },
-  single: { c: [[-0.5, 0.5, 0.1, 0.78]], m: [[0.62, 0.9, 0.12, 0.5]] },
-  super: { c: [[-0.22, 0.22, 0.08, 0.3]], m: [[0.3, 0.9, 0.08, 0.5]] },
-  horseshoe: { c: [[-0.17, 0.17, 0.18, 0.82]], m: [[0.3, 0.9, 0.08, 0.42]] },
-};
-
 /** Lights, grilles, shut-lines, mirrors, seats and exhaust tips. */
 export function buildDetails(S, M, build, exhaust) {
   const g = new THREE.Group(); g.name = 'details';
@@ -244,57 +238,43 @@ export function buildDetails(S, M, build, exhaust) {
     return add(patchCap(S, end, zc - r, zc + r, u => yc - h(u), u => yc + h(u), off, 20, 4), mat);
   };
 
-  // ---- front fascia
-  const fs = FRONT_STYLES[car.style.front] || FRONT_STYLES.slot;
-  fs.c.forEach(r => capRect(1, r, M.grille));
-  fs.m.forEach(r => { capRect(1, r, M.grille); capRect(1, [-r[1], -r[0], r[2], r[3]], M.grille); });
-
-  capRect(1, [-0.93, 0.93, 0.0, 0.055], M.trim, 0.007);                 // chin
-  capDisc(1, 0, 0.9, 0.028, M.chrome, 0.009); capDisc(-1, 0, 0.82, 0.028, M.chrome, 0.009);   // badges
-
-  // ---- headlights
-  const hs = car.style.head;
-  if (hs === 'swept' || hs === 'slit') {
-    const x0 = noseX - (hs === 'swept' ? 0.52 : 0.46), x1 = noseX - 0.05;
-    const outer = (u, x) => 0.9 * S.zTop(x);
-    const width = (u, x) => (hs === 'swept' ? 0.1 + 0.3 * Math.pow(u, 0.8) : 0.05 + 0.16 * u) * S.zTop(x);
-    const inner = (u, x) => outer(u, x) - width(u, x);
-    both(patchTop(S, x0, x1, inner, outer, 0.006, 18, 6), M.lens, 1);
-    both(patchTop(S, x0 + 0.04, x1 - 0.01, (u, x) => inner(u, x) + 0.012, (u, x) => inner(u, x) + 0.032, 0.009, 18, 1), M.led, 2);
-    if (hs === 'swept') {
-      for (const [xc, dz] of [[noseX - 0.19, 0.105], [noseX - 0.3, 0.085]]) {
-      const rz = 0.045, rx = 0.052;
-      const zc = x => 0.9 * S.zTop(x) - dz;
-      both(patchTop(S, xc - rx, xc + rx, (u, x) => zc(x) - rz * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1))), (u, x) => zc(x) + rz * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1))), 0.009, 16, 3), M.led, 2);
+  // ---- individual front / rear design for this car (see designs.js)
+  const D = DESIGNS[car.id] || DESIGNS.gtr;
+  const MAT = { g: M.grille, k: M.trim, l: M.lens, w: M.led, r: M.ledRed, a: M.amber, c: M.chrome, b: M.paint, p: M.plate, x: M.carbon, s: M.seam };
+  const layer = (sh, base) => base + 0.0028 * (sh.o || 0);
+  const drawCap = (end, shapes) => {
+    const e = S.ends[end], Y = t => lerp(e.a, e.b, t), Z = S.capHalf(end, Y(0.45));
+    for (const sh of shapes) for (const sg of sh.mir ? [1, -1] : [1]) {
+      const mat = MAT[sh.m], off = layer(sh, 0.006);
+      if (sh.t === 'c') { capDisc(end, sg * sh.z, sh.y, sh.r, mat, off + 0.001); continue; }
+      for (let i = 0; i < sh.p.length - 1; i++) {
+        const [za, a0, a1] = sh.p[i], [zb, b0, b1] = sh.p[i + 1];
+        add(patchCap(S, end, sg * za * Z, sg * zb * Z, u => Y(lerp(a0, b0, u)), u => Y(lerp(a1, b1, u)), off, 6, 3), mat, 1 + (sh.o || 0));
       }
     }
-  } else if (hs === 'round') {
-    const xc = noseX - 0.34, rx = 0.17, rz = 0.14, zc = x => 0.63 * S.zTop(x);
-    const ell = (k) => [(u, x) => zc(x) - k * rz * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1))), (u, x) => zc(x) + k * rz * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1)))];
-    both(patchTop(S, xc - rx, xc + rx, ...ell(1), 0.006, 24, 6), M.lens, 1);
-    both(patchTop(S, xc - rx * 0.62, xc + rx * 0.62, ...ell(0.62), 0.009, 20, 4), M.led, 2);
-  } else if (hs === 'box') {
-    for (const s of [1, -1]) {
-      capRect(1, s > 0 ? [0.52, 0.9, 0.54, 0.8] : [-0.9, -0.52, 0.54, 0.8], M.lens, 0.008);
-      capRect(1, s > 0 ? [0.56, 0.86, 0.6, 0.66] : [-0.86, -0.56, 0.6, 0.66], M.led, 0.011);
-      capRect(1, s > 0 ? [0.56, 0.86, 0.7, 0.75] : [-0.86, -0.56, 0.7, 0.75], M.led, 0.011);
+  };
+  // shapes on top of the body, measured back from the nose (end = 1) or forward from the tail (end = -1)
+  const drawTop = (end, shapes) => {
+    const X = d => end > 0 ? noseX - d : tailX + d;
+    for (const sh of shapes) {
+      const mat = MAT[sh.m], off = layer(sh, 0.006), ord = 1 + (sh.o || 0);
+      if (sh.t === 'c') {
+        const xc = X(sh.d), el = k => (u, x) => sh.z * S.zTop(x) + k * sh.rz * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1)));
+        both(patchTop(S, xc - sh.rd, xc + sh.rd, el(-1), el(1), off, 16, 3), mat, ord); continue;
+      }
+      for (let i = 0; i < sh.p.length - 1; i++) {
+        let [da, ia, oa] = sh.p[i], [db, ib, ob] = sh.p[i + 1], xa = X(da), xb = X(db);
+        if (xa > xb) { [xa, xb] = [xb, xa];[ia, ib] = [ib, ia];[oa, ob] = [ob, oa]; }
+        both(patchTop(S, xa, xb, (u, x) => lerp(ia, ib, u) * S.zTop(x), (u, x) => lerp(oa, ob, u) * S.zTop(x), off, 8, 4), mat, ord);
+      }
     }
-  } else if (hs === 'rounds') {
-    for (const s of [1, -1]) for (const zN of [0.5, 0.78]) {
-      capDisc(1, s * zN, 0.67, 0.075, M.lens, 0.008);
-      capDisc(1, s * zN, 0.67, 0.05, M.led, 0.011);
-    }
-  }
-
-  // ---- tail
-  capRect(-1, [-0.8, 0.8, 0.03, 0.3], M.grille);
-  capRect(-1, [-0.2, 0.2, 0.42, 0.58], M.plate, 0.008);
-  const ts = car.style.tail;
-  if (ts === 'quad') for (const s of [1, -1]) for (const zN of [0.46, 0.77]) { capDisc(-1, s * zN, 0.7, 0.082, M.lens, 0.007); capDisc(-1, s * zN, 0.7, 0.066, M.ledRed, 0.01); }
-  if (ts === 'dual') for (const s of [1, -1]) { capDisc(-1, s * 0.64, 0.7, 0.1, M.lens, 0.007); capDisc(-1, s * 0.64, 0.7, 0.082, M.ledRed, 0.01); }
-  if (ts === 'bar') { capRect(-1, [-0.92, 0.92, 0.66, 0.8], M.lens, 0.007); capRect(-1, [-0.9, 0.9, 0.7, 0.76], M.ledRed, 0.01); }
-  if (ts === 'tri') for (const s of [1, -1]) for (const [a, b] of [[0.42, 0.54], [0.58, 0.7], [0.74, 0.86]]) capRect(-1, s > 0 ? [a, b, 0.52, 0.84] : [-b, -a, 0.52, 0.84], M.ledRed, 0.009);
-  if (ts === 'slim') for (const s of [1, -1]) { capRect(-1, s > 0 ? [0.38, 0.93, 0.64, 0.82] : [-0.93, -0.38, 0.64, 0.82], M.lens, 0.007); capRect(-1, s > 0 ? [0.42, 0.9, 0.7, 0.76] : [-0.9, -0.42, 0.7, 0.76], M.ledRed, 0.01); }
+  };
+  drawCap(1, D.f); drawTop(1, D.h || []); if (D.ht) drawTop(1, D.ht);
+  capRect(1, [-0.93, 0.93, 0.0, 0.055], M.trim, 0.007);                 // chin
+  capDisc(1, 0, 0.92, 0.026, M.chrome, 0.012); capDisc(-1, 0, 0.9, 0.026, M.chrome, 0.012);   // badges
+  capRect(-1, [-0.8, 0.8, 0.03, 0.3], M.grille);                         // rear valance
+  if (D.plate !== null) { const [p0, p1] = D.plate || [0.42, 0.58]; capRect(-1, [-0.2, 0.2, p0, p1], M.plate, 0.012); }
+  drawCap(-1, D.r); if (D.rt) drawTop(-1, D.rt);
 
   // ---- shut-lines and side intakes
   const sill = x => S.floorY(x) + 0.07, belt = x => S.shoulderY(x) - 0.012;

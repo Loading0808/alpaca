@@ -56,23 +56,49 @@
     </div>
   </section>
 
-  <div class="drive-menu" id="driveMenu" role="dialog" aria-label="Choose where to drive">
+  <div class="drive-menu" id="driveMenu" role="dialog" aria-label="Drive mode">
     <div class="drive-box">
       <div class="panel-head"><small>DRIVE MODE</small><h2>Where to?</h2></div>
-      <button class="card world" data-world="circuit"><div class="card-top"><b>Apex Raceway</b><em>Circuit · Day</em></div><p>A 1.5 km race track with kerbs, a grandstand and lap timing. Chase your best lap.</p></button>
-      <button class="card world" data-world="city"><div class="card-top"><b>Neon District</b><em>City · Night</em></div><p>Free-roam a downtown grid after dark. Long avenues, tight corners, solid buildings.</p></button>
-      <div class="keys"><b>W / ↑</b> throttle <b>S / ↓</b> brake · reverse <b>A D / ← →</b> steer <b>Space</b> handbrake <b>C</b> camera <b>R</b> reset <b>Esc</b> garage</div>
-      <button class="btn wide-btn" id="driveClose">Cancel</button>
+      <div class="drive-cols">
+        <div>
+          <div class="sec">Location</div>
+          <div id="dmWorlds"></div>
+          <div class="sec">Transmission</div>
+          <div class="chip-row" id="dmTrans"></div>
+          <p class="dm-note" id="dmTransDesc"></p>
+          <div class="keys"><b>W / ↑</b> throttle <b>S / ↓</b> brake <b>A D / ← →</b> steer <b>Space</b> handbrake <b>E</b> shift up <b>Q</b> shift down <b>L-Shift</b> clutch <b>T</b> transmission <b>C</b> camera <b>R</b> reset <b>Esc</b> garage</div>
+        </div>
+        <div>
+          <div class="sec">Leaderboard</div>
+          <div class="chip-row" id="dmTabs"></div>
+          <table class="board"><thead><tr><th>#</th><th>Driver</th><th>Car</th><th>Score</th></tr></thead><tbody id="dmBoard"></tbody></table>
+          <label class="dm-name">Your driver name <input type="text" id="dmName" maxlength="18" /></label>
+          <p class="dm-note">Scores are saved in this browser. Entries marked “target” are reference scores to aim for, not other players.</p>
+          <button class="btn" id="dmClear">Clear this map's scores</button>
+        </div>
+      </div>
+      <button class="btn wide-btn" id="driveClose">Back to garage</button>
     </div>
   </div>
 
   <div class="drive-hud" id="driveHud">
     <div class="hud-top">
-      <div class="hud-place"><small>Now driving</small><b id="hudPlace"></b></div>
-      <div class="hud-laps" id="hudLaps"><div><small>Lap</small><b id="hudLap">—</b></div><div><small>Last</small><b id="hudLast">—</b></div><div><small>Best</small><b id="hudBest">—</b></div></div>
-      <div class="hud-btns"><button class="btn" id="hudCam">Camera · C</button><button class="btn" id="hudReset">Reset · R</button><button class="btn btn-drive" id="hudExit">Garage · Esc</button></div>
+      <div class="hud-place"><small>Now driving</small><b id="hudPlace"></b><small id="hudTrans" class="hud-trans"></small></div>
+      <div class="hud-mid">
+        <div class="hud-score">
+          <div><small>Score</small><b id="hudScore">0</b></div>
+          <div class="hud-mult-wrap"><b id="hudMult">×1.0</b><span class="combo"><u id="hudComboBar"></u></span></div>
+          <div><small>Best</small><b id="hudPb" class="dim">0</b></div>
+        </div>
+        <div class="hud-drift" id="hudDrift"></div>
+        <div class="hud-feed" id="hudFeed" aria-live="polite"></div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-btns"><button class="btn" id="hudCam">Camera · C</button><button class="btn" id="hudReset">Reset · R</button><button class="btn btn-drive" id="hudExit">Garage · Esc</button></div>
+        <div class="hud-laps" id="hudLaps"><div><small>Lap</small><b id="hudLap">—</b></div><div><small>Last</small><b id="hudLast">—</b></div><div><small>Best</small><b id="hudBest">—</b></div></div>
+      </div>
     </div>
-    <div class="hud-speed"><b id="hudSpeed">0</b><small>km/h</small><i id="hudGear">1</i></div>
+    <div class="hud-speed"><b id="hudSpeed">0</b><small>km/h</small><i id="hudGearBox"><span id="hudGear">1</span></i></div>
   </div>
 
   <div class="toast" id="toast" role="status"></div>

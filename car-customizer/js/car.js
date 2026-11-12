@@ -105,7 +105,7 @@ export class Car {
 
   setLights(on) {
     this.lights = on;
-    this.M.led.emissiveIntensity = on ? 3.2 : 0.25; this.M.ledRed.emissiveIntensity = on ? 2.6 : 0.35;
+    this.M.led.emissiveIntensity = on ? 3.2 : 0.25; this.M.ledRed.emissiveIntensity = on ? 2.6 : 0.35; this.M.amber.emissiveIntensity = on ? 1.6 : 0.3;
     for (const s of this.beams) s.intensity = on ? 60 : 0;
   }
 

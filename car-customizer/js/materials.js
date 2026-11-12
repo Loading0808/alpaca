@@ -59,7 +59,7 @@ export function createMaterials() {
   const phys = (o) => new THREE.MeshPhysicalMaterial(o);
   const carbonMap = carbonTexture();
   const M = {
-    paint: phys({ color: '#888', side: DS, clearcoat: 1, clearcoatRoughness: 0.04 }),
+    paint: phys({ color: '#888', side: DS, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.25 }),
     roof: phys({ color: '#888', side: DS, clearcoat: 1, clearcoatRoughness: 0.04 }),
     glass: phys({ color: '#06080a', side: DS, roughness: 0.03, metalness: 0, transparent: true, opacity: 0.8, envMapIntensity: 1.4 }),
     trim: phys({ color: '#050506', side: DS, roughness: 0.2, clearcoat: 1 }),
@@ -69,6 +69,7 @@ export function createMaterials() {
     lens: phys({ color: '#0a0c10', side: DS, roughness: 0.05, clearcoat: 1, metalness: 0.4 }),
     led: std({ color: '#c4ccd8', side: DS, emissive: '#dfeaff', emissiveIntensity: 0.25, roughness: 0.3 }),
     ledRed: std({ color: '#5a0508', side: DS, emissive: '#ff1418', emissiveIntensity: 0.35, roughness: 0.3 }),
+    amber: std({ color: '#7a3a00', side: DS, emissive: '#ff8a00', emissiveIntensity: 0.3, roughness: 0.3 }),
     plate: std({ color: '#e8e8e2', side: DS, roughness: 0.6 }),
     grille: std({ color: '#ffffff', map: grilleTexture(), side: DS, roughness: 0.55, metalness: 0.4 }),
     seam: std({ color: '#050505', side: DS, roughness: 0.8 }),
