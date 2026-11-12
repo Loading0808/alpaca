@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>APEX GARAGE — 3D Car Customization Simulator</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Three.js is bundled locally in /vendor so the app works offline -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="view"></canvas>
+
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span><div><b>APEX GARAGE</b><small>Custom Works Simulator</small></div></div>
+    <div class="car-title"><small id="carBrand"></small><b id="carName"></b></div>
+    <div class="top-right">
+      <div class="cost"><small>Build total</small><b id="cost">$0</b></div>
+      <button class="btn" id="btnSave" title="Save this build in your browser">Save</button>
+      <button class="btn" id="btnLoad" title="Load the saved build">Load</button>
+      <button class="btn" id="btnReset" title="Return this car to factory spec">Reset</button>
+      <button class="btn" id="btnShot" title="Download a screenshot">Photo</button>
+    </div>
+  </header>
+
+  <nav class="cats" id="cats" aria-label="Customization categories"></nav>
+
+  <aside class="panel" id="panel">
+    <div class="panel-head"><small id="panelIndex"></small><h2 id="panelTitle"></h2></div>
+    <div class="panel-body" id="panelBody"></div>
+  </aside>
+
+  <section class="dock">
+    <div class="dock-card stats" id="stats"></div>
+
+    <div class="dock-card console">
+      <canvas id="tach" width="340" height="340" aria-label="Tachometer"></canvas>
+      <div class="console-ctl">
+        <button class="start" id="btnStart"><span class="start-ring"></span><span id="startLabel">ENGINE<br>START</span></button>
+        <button class="pedal" id="btnRev" disabled>REV<small>hold · Space</small></button>
+        <label class="vol">VOL<input type="range" id="vol" min="0" max="1" step="0.01" value="0.8" /></label>
+      </div>
+    </div>
+
+    <div class="dock-card views">
+      <div class="chip-row" id="viewBtns"></div>
+      <div class="chip-row" id="toggleBtns"></div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="status"></div>
+  <div class="loader" id="loader"><div class="loader-box"><span class="brand-mark"></span><b>APEX GARAGE</b><small id="loaderMsg">Opening the shop…</small></div></div>
+
+  <script type="module" src="js/main.js"></script>
+  <script>
+    // Friendly hint when the page is opened by double-clicking the file.
+    if (location.protocol === 'file:') {
+      document.getElementById('loaderMsg').innerHTML =
+        'This app must be served over http.<br>In VS Code: right-click <b>index.html</b> → <b>Open with Live Server</b>,<br>or run <b>node server.js</b> in the terminal.';
+    }
+  </script>
+</body>
+</html>

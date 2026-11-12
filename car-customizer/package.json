@@ -1,0 +1,9 @@
+{
+  "name": "apex-garage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "3D car customization simulator built with HTML, CSS, JavaScript and Three.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
