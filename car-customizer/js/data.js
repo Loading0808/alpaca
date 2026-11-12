@@ -13,9 +13,11 @@ export const PROFILE_DEFAULTS = {
   frontRise: 0.04, rearRise: 0.1,
   roofDrop: 0.04, rearPow: 0.9, cabTaper: 0.12,
   plan: [0.93, 1.0, 0.975, 0.99, 0.9], // width factor: tail, rear axle, middle, front axle, nose
+  scallop: 0.022,    // depth of the sculpted door surface below the shoulder crease
+  noseBulge: 0.12, tailBulge: 0.07, hoodBulge: 0,
 };
 
-export const BRANDS = ['Nissan', 'Toyota', 'Mazda', 'BMW', 'Ford', 'Dodge', 'Porsche', 'Audi', 'Lamborghini', 'Ferrari', 'McLaren'];
+export const BRANDS = ['Nissan', 'Toyota', 'Honda', 'Mazda', 'Subaru', 'Mitsubishi', 'Lexus', 'BMW', 'Mercedes-AMG', 'Audi', 'Porsche', 'Ford', 'Chevrolet', 'Dodge', 'Aston Martin', 'Lamborghini', 'Ferrari', 'McLaren', 'Bugatti'];
 
 export const CARS = [
   {
@@ -116,6 +118,132 @@ export const CARS = [
     style: { front: 'super', head: 'slit', tail: 'slim' }, tips: 'center2', color: '#ff7a00',
     stock: { engine: 'm840', turbo: 'twin', sc: 'none', spoiler: 'lip' },
   },
+  {
+    id: 'r34', brand: 'Nissan', name: 'Skyline GT-R (R34)', price: 140000, weight: 1560, drive: 'AWD', layout: 'front', cda: 0.68,
+    dims: { L: 4.6, W: 1.785, H: 1.36, wb: 2.665, fo: 0.9 }, gc: 0.13, tireR: 0.325, tireW: [0.245, 0.245], rim: 18,
+    profile: { noseH: 0.68, cowlH: 0.97, deckH: 1.0, tailH: 0.98, cowl: 0.32, wsTop: 0.45, rwTop: 0.68, deck: 0.84, hoodPow: 0.45, noseTaper: 0.14, tailTaper: 0.1, rearPow: 0.75, hoodBulge: 0.012 },
+    style: { front: 'gtr', head: 'box', tail: 'quad' }, tips: 'dual', color: '#1e3a8a',
+    stock: { engine: 'rb26', turbo: 'twin', sc: 'none', spoiler: 'gt' },
+  },
+  {
+    id: 'z34', brand: 'Nissan', name: 'Z (RZ34)', price: 43000, weight: 1600, drive: 'RWD', layout: 'front', cda: 0.62,
+    dims: { L: 4.38, W: 1.845, H: 1.315, wb: 2.55, fo: 0.87 }, gc: 0.125, tireR: 0.335, tireW: [0.255, 0.275], rim: 19,
+    profile: { noseH: 0.62, cowlH: 0.94, deckH: 0.97, tailH: 0.93, cowl: 0.37, wsTop: 0.51, rwTop: 0.71, deck: 0.91, hoodPow: 0.6, cabTaper: 0.2 },
+    style: { front: 'single', head: 'swept', tail: 'slim' }, tips: 'dual', color: '#f2c100',
+    stock: { engine: 'vr30', turbo: 'twin', sc: 'none', spoiler: 'lip' },
+  },
+  {
+    id: 'supra4', brand: 'Toyota', name: 'Supra MK4 (A80)', price: 95000, weight: 1510, drive: 'RWD', layout: 'front', cda: 0.6,
+    dims: { L: 4.515, W: 1.81, H: 1.275, wb: 2.55, fo: 0.98 }, gc: 0.125, tireR: 0.325, tireW: [0.235, 0.255], rim: 18,
+    profile: { noseH: 0.56, cowlH: 0.9, deckH: 0.95, tailH: 0.92, cowl: 0.36, wsTop: 0.5, rwTop: 0.69, deck: 0.9, hoodPow: 0.72, cabTaper: 0.2, noseTaper: 0.26, tailTaper: 0.2, rearPow: 1.05, scallop: 0.012 },
+    style: { front: 'tri', head: 'swept', tail: 'quad' }, tips: 'dual', color: '#e9e9ea',
+    stock: { engine: '2jz', turbo: 'twin', sc: 'none', spoiler: 'gt' },
+  },
+  {
+    id: 'nsx', brand: 'Honda', name: 'NSX (NA1)', price: 120000, weight: 1370, drive: 'RWD', layout: 'mid', cda: 0.56,
+    dims: { L: 4.43, W: 1.81, H: 1.17, wb: 2.53, fo: 1.0 }, gc: 0.125, tireR: 0.315, tireW: [0.215, 0.245], rim: 17,
+    profile: { noseH: 0.48, cowlH: 0.8, deckH: 0.86, tailH: 0.84, cowl: 0.29, wsTop: 0.44, rwTop: 0.6, deck: 0.78, hoodPow: 0.85, tumble: 0.5, cabTaper: 0.16, noseTaper: 0.24 },
+    style: { front: 'slot', head: 'slit', tail: 'bar' }, tips: 'dual', color: '#d40000',
+    stock: { engine: 'c30a', turbo: 'none', sc: 'none', spoiler: 'lip' },
+  },
+  {
+    id: 'ctr', brand: 'Honda', name: 'Civic Type R (FK8)', price: 38000, weight: 1380, drive: 'FWD', layout: 'front', cda: 0.7, doors: 4,
+    dims: { L: 4.557, W: 1.877, H: 1.434, wb: 2.7, fo: 0.93 }, gc: 0.13, tireR: 0.335, tireW: [0.245, 0.245], rim: 20,
+    profile: { noseH: 0.68, cowlH: 0.98, deckH: 1.08, tailH: 1.02, cowl: 0.3, wsTop: 0.43, rwTop: 0.8, deck: 0.96, hoodPow: 0.5, roofDrop: 0.1, rearPow: 0.8, cabTaper: 0.1 },
+    style: { front: 'gtr', head: 'swept', tail: 'slim' }, tips: 'center2', color: '#f4f4f5',
+    stock: { engine: 'k20', turbo: 'single', sc: 'none', spoiler: 'gt' },
+  },
+  {
+    id: 's2000', brand: 'Honda', name: 'S2000 (AP2)', price: 36000, weight: 1280, drive: 'RWD', layout: 'front', cda: 0.58,
+    dims: { L: 4.135, W: 1.75, H: 1.285, wb: 2.4, fo: 0.8 }, gc: 0.13, tireR: 0.31, tireW: [0.215, 0.245], rim: 17,
+    profile: { noseH: 0.58, cowlH: 0.9, deckH: 0.93, tailH: 0.9, cowl: 0.42, wsTop: 0.54, rwTop: 0.7, deck: 0.82, hoodPow: 0.65, rearPow: 0.8 },
+    style: { front: 'slot', head: 'swept', tail: 'slim' }, tips: 'dual', color: '#c9ccd1',
+    stock: { engine: 'f20c', turbo: 'none', sc: 'none', spoiler: 'none' },
+  },
+  {
+    id: 'wrx', brand: 'Subaru', name: 'WRX STI', price: 42000, weight: 1530, drive: 'AWD', layout: 'front', cda: 0.72, doors: 4, scoop: true,
+    dims: { L: 4.595, W: 1.795, H: 1.475, wb: 2.65, fo: 0.92 }, gc: 0.135, tireR: 0.33, tireW: [0.245, 0.245], rim: 19,
+    profile: { noseH: 0.72, cowlH: 1.02, deckH: 1.07, tailH: 1.04, cowl: 0.3, wsTop: 0.43, rwTop: 0.7, deck: 0.84, hoodPow: 0.45, noseTaper: 0.14, tailTaper: 0.1, rearPow: 0.75, cabTaper: 0.08 },
+    style: { front: 'single', head: 'swept', tail: 'slim' }, tips: 'quad', color: '#1d4ed8',
+    stock: { engine: 'ej25', turbo: 'single', sc: 'none', spoiler: 'gt' },
+  },
+  {
+    id: 'evo', brand: 'Mitsubishi', name: 'Lancer Evolution X', price: 40000, weight: 1560, drive: 'AWD', layout: 'front', cda: 0.72, doors: 4,
+    dims: { L: 4.495, W: 1.81, H: 1.48, wb: 2.65, fo: 0.92 }, gc: 0.135, tireR: 0.33, tireW: [0.245, 0.245], rim: 18,
+    profile: { noseH: 0.74, cowlH: 1.03, deckH: 1.08, tailH: 1.05, cowl: 0.3, wsTop: 0.43, rwTop: 0.7, deck: 0.84, hoodPow: 0.4, noseTaper: 0.12, tailTaper: 0.1, rearPow: 0.75, cabTaper: 0.08 },
+    style: { front: 'single', head: 'swept', tail: 'slim' }, tips: 'dual', color: '#d40000',
+    stock: { engine: '4b11', turbo: 'single', sc: 'none', spoiler: 'gt' },
+  },
+  {
+    id: 'lfa', brand: 'Lexus', name: 'LFA', price: 800000, weight: 1480, drive: 'RWD', layout: 'front', cda: 0.6,
+    dims: { L: 4.505, W: 1.895, H: 1.22, wb: 2.605, fo: 0.95 }, gc: 0.115, tireR: 0.345, tireW: [0.265, 0.305], rim: 20,
+    profile: { noseH: 0.52, cowlH: 0.86, deckH: 0.92, tailH: 0.9, cowl: 0.4, wsTop: 0.53, rwTop: 0.7, deck: 0.88, hoodPow: 0.75, cabTaper: 0.2, tumble: 0.48 },
+    style: { front: 'tri', head: 'slit', tail: 'slim' }, tips: 'center2', color: '#f4f4f5',
+    stock: { engine: 'lfa', turbo: 'none', sc: 'none', spoiler: 'lip' },
+  },
+  {
+    id: 'e46', brand: 'BMW', name: 'M3 (E46)', price: 55000, weight: 1570, drive: 'RWD', layout: 'front', cda: 0.64,
+    dims: { L: 4.492, W: 1.78, H: 1.37, wb: 2.731, fo: 0.78 }, gc: 0.13, tireR: 0.325, tireW: [0.225, 0.255], rim: 18,
+    profile: { noseH: 0.68, cowlH: 0.98, deckH: 1.02, tailH: 1.0, cowl: 0.33, wsTop: 0.46, rwTop: 0.69, deck: 0.84, hoodPow: 0.45, noseTaper: 0.14, tailTaper: 0.1, rearPow: 0.75, hoodBulge: 0.015 },
+    style: { front: 'kidney', head: 'box', tail: 'slim' }, tips: 'quad', color: '#c9ccd1',
+    stock: { engine: 's54', turbo: 'none', sc: 'none', spoiler: 'lip' },
+  },
+  {
+    id: 'amggt', brand: 'Mercedes-AMG', name: 'GT R', price: 165000, weight: 1630, drive: 'RWD', layout: 'front', cda: 0.66,
+    dims: { L: 4.55, W: 1.94, H: 1.285, wb: 2.63, fo: 0.93 }, gc: 0.115, tireR: 0.345, tireW: [0.275, 0.325], rim: 20,
+    profile: { noseH: 0.6, cowlH: 0.94, deckH: 0.97, tailH: 0.9, cowl: 0.44, wsTop: 0.56, rwTop: 0.72, deck: 0.93, hoodPow: 0.6, cabTaper: 0.24, rearPow: 1.1, roofDrop: 0.06, hoodBulge: 0.015 },
+    style: { front: 'single', head: 'swept', tail: 'slim' }, tips: 'center2', color: '#7ac143',
+    stock: { engine: 'm177', turbo: 'twin', sc: 'none', spoiler: 'gt' },
+  },
+  {
+    id: 'cayman', brand: 'Porsche', name: '718 Cayman GT4', price: 105000, weight: 1420, drive: 'RWD', layout: 'mid', cda: 0.6,
+    dims: { L: 4.456, W: 1.801, H: 1.269, wb: 2.484, fo: 1.0 }, gc: 0.115, tireR: 0.335, tireW: [0.245, 0.295], rim: 20,
+    profile: { noseH: 0.54, cowlH: 0.86, deckH: 0.9, tailH: 0.84, cowl: 0.31, wsTop: 0.45, rwTop: 0.62, deck: 0.88, hoodPow: 0.7, cabTaper: 0.22, rearPow: 1.1, noseTaper: 0.24 },
+    style: { front: 'tri', head: 'round', tail: 'slim' }, tips: 'dual', color: '#f2c100',
+    stock: { engine: 'flat6', turbo: 'none', sc: 'none', spoiler: 'gt' },
+  },
+  {
+    id: 'fordgt', brand: 'Ford', name: 'GT (2017)', price: 500000, weight: 1385, drive: 'RWD', layout: 'mid', cda: 0.6,
+    dims: { L: 4.763, W: 2.004, H: 1.11, wb: 2.71, fo: 1.1 }, gc: 0.1, tireR: 0.345, tireW: [0.245, 0.325], rim: 20,
+    profile: { noseH: 0.44, cowlH: 0.74, deckH: 0.82, tailH: 0.8, cowl: 0.28, wsTop: 0.43, rwTop: 0.56, deck: 0.8, hoodPow: 0.9, tumble: 0.62, cabTaper: 0.34, rearPow: 1.15, shoulder: 0.14 },
+    style: { front: 'super', head: 'slit', tail: 'dual' }, tips: 'center2', color: '#1d4ed8',
+    stock: { engine: 'ecoboost', turbo: 'twin', sc: 'none', spoiler: 'lip' },
+  },
+  {
+    id: 'c8', brand: 'Chevrolet', name: 'Corvette C8 Stingray', price: 68000, weight: 1530, drive: 'RWD', layout: 'mid', cda: 0.64,
+    dims: { L: 4.63, W: 1.934, H: 1.234, wb: 2.722, fo: 1.0 }, gc: 0.12, tireR: 0.345, tireW: [0.245, 0.305], rim: 19,
+    profile: { noseH: 0.5, cowlH: 0.82, deckH: 0.9, tailH: 0.88, cowl: 0.27, wsTop: 0.42, rwTop: 0.57, deck: 0.8, hoodPow: 0.8, tumble: 0.5, cabTaper: 0.2 },
+    style: { front: 'super', head: 'slit', tail: 'slim' }, tips: 'quad', color: '#d40000',
+    stock: { engine: 'lt2', turbo: 'none', sc: 'none', spoiler: 'lip' },
+  },
+  {
+    id: 'camaro', brand: 'Chevrolet', name: 'Camaro ZL1', price: 70000, weight: 1760, drive: 'RWD', layout: 'front', cda: 0.74,
+    dims: { L: 4.83, W: 1.905, H: 1.344, wb: 2.81, fo: 0.95 }, gc: 0.13, tireR: 0.35, tireW: [0.285, 0.305], rim: 20,
+    profile: { noseH: 0.74, cowlH: 1.03, deckH: 1.05, tailH: 1.02, cowl: 0.36, wsTop: 0.5, rwTop: 0.69, deck: 0.87, hoodPow: 0.38, noseTaper: 0.13, tailTaper: 0.1, hoodBulge: 0.03, tumble: 0.5 },
+    style: { front: 'wide', head: 'box', tail: 'slim' }, tips: 'quad', color: '#111214',
+    stock: { engine: 'lt4', turbo: 'none', sc: 'roots', spoiler: 'lip' },
+  },
+  {
+    id: 'viper', brand: 'Dodge', name: 'Viper ACR', price: 150000, weight: 1540, drive: 'RWD', layout: 'front', cda: 0.72,
+    dims: { L: 4.463, W: 1.94, H: 1.246, wb: 2.51, fo: 0.92 }, gc: 0.115, tireR: 0.345, tireW: [0.295, 0.355], rim: 19,
+    profile: { noseH: 0.54, cowlH: 0.9, deckH: 0.95, tailH: 0.9, cowl: 0.47, wsTop: 0.59, rwTop: 0.74, deck: 0.92, hoodPow: 0.7, cabTaper: 0.24, rearPow: 1.0, hoodBulge: 0.02 },
+    style: { front: 'slot', head: 'swept', tail: 'slim' }, tips: 'dual', color: '#b8f000',
+    stock: { engine: 'viper', turbo: 'none', sc: 'none', spoiler: 'swan' },
+  },
+  {
+    id: 'vantage', brand: 'Aston Martin', name: 'Vantage', price: 150000, weight: 1530, drive: 'RWD', layout: 'front', cda: 0.63,
+    dims: { L: 4.465, W: 1.942, H: 1.273, wb: 2.704, fo: 0.85 }, gc: 0.12, tireR: 0.345, tireW: [0.255, 0.295], rim: 20,
+    profile: { noseH: 0.56, cowlH: 0.92, deckH: 0.97, tailH: 0.95, cowl: 0.38, wsTop: 0.52, rwTop: 0.71, deck: 0.92, hoodPow: 0.65, cabTaper: 0.22, rearPow: 1.05 },
+    style: { front: 'single', head: 'slit', tail: 'bar' }, tips: 'quad', color: '#0f7a4f',
+    stock: { engine: 'm177', turbo: 'twin', sc: 'none', spoiler: 'lip' },
+  },
+  {
+    id: 'chiron', brand: 'Bugatti', name: 'Chiron', price: 3000000, weight: 1995, drive: 'AWD', layout: 'mid', cda: 0.74,
+    dims: { L: 4.544, W: 2.038, H: 1.212, wb: 2.711, fo: 1.0 }, gc: 0.115, tireR: 0.36, tireW: [0.285, 0.355], rim: 20,
+    profile: { noseH: 0.52, cowlH: 0.84, deckH: 0.92, tailH: 0.9, cowl: 0.29, wsTop: 0.44, rwTop: 0.6, deck: 0.84, hoodPow: 0.7, tumble: 0.5, cabTaper: 0.24, rearPow: 1.1, noseTaper: 0.26, tailTaper: 0.2 },
+    style: { front: 'horseshoe', head: 'slit', tail: 'bar' }, tips: 'center2', color: '#0b1f3a',
+    stock: { engine: 'w16', turbo: 'twin', sc: 'none', spoiler: 'lip' },
+  },
 ];
 
 // hp / tq are naturally-aspirated base figures; forced induction multiplies them.
@@ -138,6 +266,19 @@ export const ENGINES = [
   { id: 'flat6', name: '4.0L Flat-6', kind: 'flat', cyl: 6, hp: 502, tq: 470, redline: 9000, idle: 900, weight: 185, price: 58000, rev: 7, tone: 136, noise: 0.18, cover: '#0f172a', desc: 'Naturally-aspirated motorsport boxer. 9,000 rpm howl.' },
   { id: 'v10', name: '5.2L V10', kind: 'v', cyl: 10, bank: 90, hp: 620, tq: 565, redline: 8700, idle: 900, weight: 230, price: 68000, rev: 6.5, tone: 132, noise: 0.2, oddfire: true, cover: '#111827', desc: 'Odd-firing V10 with an unmistakable wail.' },
   { id: 'v12', name: '6.5L V12', kind: 'v', cyl: 12, bank: 60, hp: 740, tq: 690, redline: 8700, idle: 950, weight: 260, price: 115000, rev: 6, tone: 140, noise: 0.16, cover: '#111827', desc: 'Twelve cylinders of naturally-aspirated theatre.' },
+  { id: 'f20c', name: 'F20C 2.0L Inline-4 VTEC', kind: 'i', cyl: 4, hp: 240, tq: 208, redline: 9000, idle: 950, weight: 148, price: 9500, rev: 7, tone: 138, noise: 0.2, cover: '#991b1b', desc: '120 hp per litre without boost. Lives above 6,000 rpm.' },
+  { id: '4b11', name: '4B11T 2.0L Inline-4', kind: 'i', cyl: 4, hp: 208, tq: 260, redline: 7600, idle: 900, weight: 155, price: 7000, rev: 5.5, tone: 120, noise: 0.22, cover: '#7f1d1d', desc: 'Aluminium-block rally four from the Evo X.' },
+  { id: 'ej25', name: 'EJ257 2.5L Flat-4 Boxer', kind: 'flat', cyl: 4, hp: 218, tq: 290, redline: 6700, idle: 800, weight: 165, price: 6800, rev: 4.6, tone: 88, noise: 0.28, amps: [1, 0.45, 0.85, 0.4], cover: '#7f1d1d', desc: 'Unequal-length headers give the unmistakable Subaru burble.' },
+  { id: 's54', name: 'S54 3.2L Inline-6', kind: 'i', cyl: 6, hp: 343, tq: 365, redline: 8000, idle: 900, weight: 215, price: 15500, rev: 6.2, tone: 122, noise: 0.2, cover: '#111827', desc: 'Individual throttle bodies and a metallic rasp at 8,000 rpm.' },
+  { id: 'c30a', name: 'C30A 3.0L V6 VTEC', kind: 'v', cyl: 6, bank: 90, hp: 270, tq: 285, redline: 8000, idle: 850, weight: 185, price: 14000, rev: 6, tone: 118, noise: 0.16, cover: '#991b1b', desc: 'Titanium con-rods and an 8,000 rpm redline.' },
+  { id: 'vr30', name: 'VR30 3.0L V6', kind: 'v', cyl: 6, bank: 60, hp: 250, tq: 300, redline: 7000, idle: 800, weight: 220, price: 11000, rev: 5, tone: 100, noise: 0.18, cover: '#b91c1c', desc: 'Compact modern V6 built for twin turbos.' },
+  { id: 'ecoboost', name: '3.5L EcoBoost V6 (Ford GT)', kind: 'v', cyl: 6, bank: 60, hp: 400, tq: 460, redline: 7000, idle: 900, weight: 205, price: 45000, rev: 6, tone: 104, noise: 0.24, cover: '#1e3a8a', desc: 'Le Mans-winning race-bred V6.' },
+  { id: 'lt2', name: 'LT2 6.2L V8', kind: 'v', cyl: 8, bank: 90, hp: 495, tq: 637, redline: 6600, idle: 700, weight: 210, price: 13000, rev: 4.4, tone: 78, noise: 0.27, pattern: [0, 1, 0, 0, 1, 0, 1, 1], cover: '#b91c1c', desc: 'Dry-sump small-block from the mid-engine Corvette.' },
+  { id: 'lt4', name: 'LT4 6.2L V8', kind: 'v', cyl: 8, bank: 90, hp: 435, tq: 590, redline: 6500, idle: 700, weight: 215, price: 14500, rev: 4.2, tone: 74, noise: 0.29, pattern: [0, 1, 0, 0, 1, 0, 1, 1], cover: '#111827', desc: 'Forged small-block designed to live under a blower.' },
+  { id: 'm177', name: 'M177 4.0L V8', kind: 'v', cyl: 8, bank: 90, hp: 360, tq: 430, redline: 7000, idle: 750, weight: 209, price: 28000, rev: 5, tone: 82, noise: 0.27, pattern: [0, 1, 0, 0, 1, 0, 1, 1], cover: '#111827', desc: 'Hot-V AMG V8 with a hard-edged bark.' },
+  { id: 'viper', name: '8.4L V10 (Viper)', kind: 'v', cyl: 10, bank: 90, hp: 645, tq: 813, redline: 6400, idle: 750, weight: 290, price: 38000, rev: 4, tone: 80, noise: 0.3, oddfire: true, cover: '#b91c1c', desc: 'The biggest production car engine in the world. Pure torque.' },
+  { id: 'lfa', name: '1LR-GUE 4.8L V10', kind: 'v', cyl: 10, bank: 72, hp: 553, tq: 480, redline: 9000, idle: 950, weight: 200, price: 120000, rev: 8, tone: 150, noise: 0.14, cover: '#111827', desc: 'Yamaha-tuned V10 that revs from idle to redline in 0.6 s.' },
+  { id: 'w16', name: '8.0L W16', kind: 'v', cyl: 16, bank: 90, hp: 925, tq: 1000, redline: 6700, idle: 800, weight: 430, price: 450000, rev: 4.4, tone: 92, noise: 0.22, cover: '#0b1f3a', desc: 'Sixteen cylinders. Add turbos for four-figure power.' },
 ];
 
 export const TURBOS = [

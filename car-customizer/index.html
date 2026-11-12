@@ -23,8 +23,9 @@
     <div class="car-title"><small id="carBrand"></small><b id="carName"></b></div>
     <div class="top-right">
       <div class="cost"><small>Build total</small><b id="cost">$0</b></div>
-      <button class="btn" id="btnSave" title="Save this build in your browser">Save</button>
-      <button class="btn" id="btnLoad" title="Load the saved build">Load</button>
+      <button class="btn btn-drive" id="btnDrive" title="Take this car for a drive">Drive</button>
+      <button class="btn" id="btnSave" title="Save this build to your garage">Save</button>
+      <button class="btn" id="btnLoad" title="Open your saved cars">My Cars</button>
       <button class="btn" id="btnReset" title="Return this car to factory spec">Reset</button>
       <button class="btn" id="btnShot" title="Download a screenshot">Photo</button>
     </div>
@@ -54,6 +55,25 @@
       <div class="chip-row" id="toggleBtns"></div>
     </div>
   </section>
+
+  <div class="drive-menu" id="driveMenu" role="dialog" aria-label="Choose where to drive">
+    <div class="drive-box">
+      <div class="panel-head"><small>DRIVE MODE</small><h2>Where to?</h2></div>
+      <button class="card world" data-world="circuit"><div class="card-top"><b>Apex Raceway</b><em>Circuit · Day</em></div><p>A 1.5 km race track with kerbs, a grandstand and lap timing. Chase your best lap.</p></button>
+      <button class="card world" data-world="city"><div class="card-top"><b>Neon District</b><em>City · Night</em></div><p>Free-roam a downtown grid after dark. Long avenues, tight corners, solid buildings.</p></button>
+      <div class="keys"><b>W / ↑</b> throttle <b>S / ↓</b> brake · reverse <b>A D / ← →</b> steer <b>Space</b> handbrake <b>C</b> camera <b>R</b> reset <b>Esc</b> garage</div>
+      <button class="btn wide-btn" id="driveClose">Cancel</button>
+    </div>
+  </div>
+
+  <div class="drive-hud" id="driveHud">
+    <div class="hud-top">
+      <div class="hud-place"><small>Now driving</small><b id="hudPlace"></b></div>
+      <div class="hud-laps" id="hudLaps"><div><small>Lap</small><b id="hudLap">—</b></div><div><small>Last</small><b id="hudLast">—</b></div><div><small>Best</small><b id="hudBest">—</b></div></div>
+      <div class="hud-btns"><button class="btn" id="hudCam">Camera · C</button><button class="btn" id="hudReset">Reset · R</button><button class="btn btn-drive" id="hudExit">Garage · Esc</button></div>
+    </div>
+    <div class="hud-speed"><b id="hudSpeed">0</b><small>km/h</small><i id="hudGear">1</i></div>
+  </div>
 
   <div class="toast" id="toast" role="status"></div>
   <div class="loader" id="loader"><div class="loader-box"><span class="brand-mark"></span><b>APEX GARAGE</b><small id="loaderMsg">Opening the shop…</small></div></div>

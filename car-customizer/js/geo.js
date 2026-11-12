@@ -80,11 +80,11 @@ export function planarUV(g, s = 8) {
 }
 
 /** Regular grid surface from a point function p(u, v) with u, v in [0, 1]. */
-export function gridGeometry(fn, nu = 12, nv = 6, uvScale = 8) {
+export function gridGeometry(fn, nu = 12, nv = 6, uvScale = 8, axes = 'xz') {
   const pos = [], uv = [], idx = [];
   for (let i = 0; i <= nu; i++) for (let j = 0; j <= nv; j++) {
     const p = fn(i / nu, j / nv);
-    pos.push(p.x, p.y, p.z); uv.push(p.x * uvScale, p.z * uvScale);
+    pos.push(p.x, p.y, p.z); uv.push(p[axes[0]] * uvScale, p[axes[1]] * uvScale);
   }
   const w = nv + 1;
   for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {

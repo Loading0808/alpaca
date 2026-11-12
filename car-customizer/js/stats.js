@@ -25,7 +25,7 @@ export function computeStats(build) {
   const weight = car.weight + (e.weight - stockE.weight) + r.turbo.weight + r.sc.weight + r.exhaust.weight + r.intake.weight
     + r.kit.weight + r.spoiler.weight + r.hood.weight + r.roof.weight + r.rim.weight + r.tire.weight + r.susp.weight;
   const down = (r.kit.down || 0) + (r.spoiler.down || 0), drag = (r.kit.drag || 0) + (r.spoiler.drag || 0);
-  const traction = (car.drive === 'AWD' ? 1.08 : 1.5) / Math.pow(r.tire.grip * (r.tire.launch || 1), 0.6);
+  const traction = ({ AWD: 1.08, RWD: 1.5, FWD: 1.72 }[car.drive]) / Math.pow(r.tire.grip * (r.tire.launch || 1), 0.6);
   const t100 = Math.max(1.75, 1.15 * Math.pow(weight / hp, 0.75) * traction);
   const top = 3.6 * Math.cbrt((hp * 745.7 * 0.85 * 2) / (1.2 * car.cda * (1 + drag * 2.2))) * 0.92;
   const dropMm = build.susp.drop * 1000;

@@ -102,6 +102,7 @@ function buildGarage(scene) {
 }
 
 export function createStage(canvas) {
+  const stage = { driving: false };
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -120,31 +121,32 @@ export function createStage(canvas) {
   controls.minDistance = 1.6; controls.maxDistance = 12; controls.maxPolarAngle = Math.PI * 0.495; controls.enablePan = false;
   controls.autoRotateSpeed = 0.9;
 
-  scene.add(new THREE.HemisphereLight(0xdfe6ff, 0x1a1a1e, 0.55));
+  const garageRoot = new THREE.Group(); scene.add(garageRoot);   // everything that belongs to the garage (hidden while driving)
+  garageRoot.add(new THREE.HemisphereLight(0xdfe6ff, 0x1a1a1e, 0.55));
   const key = new THREE.DirectionalLight(0xffffff, 1.5);
   key.position.set(3.5, 9, 4.5); key.castShadow = true; key.shadow.mapSize.set(2048, 2048);
   Object.assign(key.shadow.camera, { left: -4.5, right: 4.5, top: 4.5, bottom: -4.5, near: 1, far: 22 });
   key.shadow.bias = -0.0004; key.shadow.normalBias = 0.025; key.shadow.radius = 5;
-  scene.add(key);
-  const fill = new THREE.DirectionalLight(0xbfd0ff, 0.45); fill.position.set(-6, 5, -5); scene.add(fill);
-  const warm = new THREE.PointLight(0xff7a3a, 14, 14, 2); warm.position.set(-9, 1.2, -8); scene.add(warm);
-  const warm2 = new THREE.PointLight(0xff7a3a, 10, 14, 2); warm2.position.set(10, 1.2, 8); scene.add(warm2);
+  garageRoot.add(key);
+  const fill = new THREE.DirectionalLight(0xbfd0ff, 0.45); fill.position.set(-6, 5, -5); garageRoot.add(fill);
+  const warm = new THREE.PointLight(0xff7a3a, 14, 14, 2); warm.position.set(-9, 1.2, -8); garageRoot.add(warm);
+  const warm2 = new THREE.PointLight(0xff7a3a, 10, 14, 2); warm2.position.set(10, 1.2, 8); garageRoot.add(warm2);
 
-  buildGarage(scene);
+  buildGarage(garageRoot);
 
   // soft contact shadow under the car
   const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
     map: tex(128, 128, (c, w) => { const gr = c.createRadialGradient(w / 2, w / 2, 4, w / 2, w / 2, w / 2); gr.addColorStop(0, 'rgba(0,0,0,0.85)'); gr.addColorStop(0.6, 'rgba(0,0,0,0.5)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, w); }),
     transparent: true, depthWrite: false,
   }));
-  blob.rotation.x = -Math.PI / 2; blob.position.y = 0.054; blob.renderOrder = 1; scene.add(blob);
+  blob.rotation.x = -Math.PI / 2; blob.position.y = 0.054; blob.renderOrder = 1; garageRoot.add(blob);
 
   const resize = () => {
     const w = canvas.clientWidth, h = canvas.clientHeight;
     if (!w || !h) return;
     renderer.setSize(w, h, false); camera.aspect = w / h;
     // keep the car centred in the free area between the UI panels
-    if (w > 900) camera.setViewOffset(w, h, 120, 46, w, h); else camera.clearViewOffset();
+    if (w > 900 && !stage.driving) camera.setViewOffset(w, h, 120, 46, w, h); else camera.clearViewOffset();
     camera.updateProjectionMatrix();
   };
   window.addEventListener('resize', resize); resize();
@@ -167,9 +169,10 @@ export function createStage(canvas) {
       camera.position.setFromSpherical(s).add(controls.target);
       if (tween.t >= 1) tween = null;
     }
-    controls.update();
+    if (!stage.driving) controls.update();
   };
   canvas.addEventListener('pointerdown', () => { tween = null; });
 
-  return { renderer, scene, camera, controls, blob, flyTo, update, resize };
+  Object.assign(stage, { renderer, scene, camera, controls, blob, flyTo, update, resize, garageRoot, garageEnv: scene.environment, garageFog: scene.fog, garageBg: scene.background });
+  return stage;
 }

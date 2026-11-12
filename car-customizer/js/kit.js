@@ -6,13 +6,13 @@ import { MeshBuilder, loft, capRing, lerp, clamp, V } from './geo.js';
 const DEG = Math.PI / 180;
 
 function flare(mb, S, xa, w, style, rivets) {
-  const { Ra, wcY } = S, hF = style === 'box' ? 0.15 : style === 'smooth' ? 0.16 : 0.125;
+  const { Ra, wcY } = S, hF = style === 'lip' ? 0.045 : style === 'box' ? 0.15 : style === 'smooth' ? 0.16 : 0.125;
   for (const side of [1, -1]) {
     const rings = [], N = 44;
     for (let i = 0; i <= N; i++) {
       const th = lerp(-30, 210, i / N) * DEG, c = Math.cos(th), s = Math.sin(th);
       const up = clamp(s, 0, 1);
-      const wi = w * (style === 'box' ? 0.8 + 0.2 * up : 0.42 + 0.58 * up) * clamp((s + 0.5) / 0.4, 0, 1);
+      const wi = w * (style === 'lip' ? 1 : style === 'box' ? 0.8 + 0.2 * up : 0.42 + 0.58 * up) * clamp((s + 0.5) / 0.4, 0, 1);
       const at = r => { const x = xa + r * c; const y = Math.max(S.floorY(x) + 0.004, wcY + r * s); return [x, y, S.sideZ(x, Math.min(y, S.shoulderY(x)))]; };
       const [x0, y0, b0] = at(Ra - 0.012), [x1, y1] = at(Ra + 0.032);
       const [xm, ym, bm] = at(Ra + 0.032 + (hF - 0.032) * 0.55), [x3, y3, b3] = at(Ra + hF);
@@ -87,6 +87,7 @@ export function buildKit(S, M, kit, spoilerId) {
   const key = kit.mat === 'carbon' ? 'carbon' : 'blackGloss';
   const rivets = [];
 
+  if (!kit.flareF) { flare(mb, S, S.xf, 0.011, 'lip'); flare(mb, S, S.xr, 0.011, 'lip'); }   // factory arch lips
   if (kit.flareF) { flare(mb, S, S.xf, kit.flareF, kit.flareStyle, rivets); flare(mb, S, S.xr, kit.flareR, kit.flareStyle, rivets); }
   if (kit.splitter) lip(mb, key, S, 1, kit.splitter);
   if (kit.rearLip) lip(mb, key, S, -1, kit.rearLip * 0.6);

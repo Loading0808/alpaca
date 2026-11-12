@@ -11,7 +11,8 @@ import * as THREE from 'three';
 import { PROFILE_DEFAULTS } from './data.js';
 import { MeshBuilder, loft, pchip, lerp, clamp, smooth, sq, V, gridGeometry } from './geo.js';
 
-const NS = 8;    // side wall segments
+const TS = [0.07, 0.16, 0.27, 0.38, 0.48, 0.57, 0.63, 0.66, 0.69, 0.72, 0.78, 0.85, 0.93, 1]; // side wall sample heights
+const NS = TS.length;
 const NT = 10;   // top surface segments (per half)
 const WELL = 0.34;
 
@@ -41,10 +42,17 @@ export function makeSurface(car) {
   const ys0 = x => Hc0(x) - P.crown + bF * gauss((x - xf) / (Ra * 1.15)) + bR * gauss((x - xr) / (Ra * 1.15));
 
   // side wall cross-section: tucked sills, widest at mid height, rounded shoulders
-  const pf = t => t < 0.3 ? 1 - 0.05 * sq(1 - t / 0.3) : t > 0.55 ? 1 - 0.12 * sq((t - 0.55) / 0.45) : 1;
-  const sideZ0 = (x, y) => { const f = floor0(x), s = ys0(x); return hw(x) * pf(clamp((y - f) / (s - f), 0, 1)); };
+  const pf = t => t < 0.3 ? 1 - 0.05 * sq(1 - t / 0.3) : t > 0.72 ? 1 - 0.12 * sq((t - 0.72) / 0.28) : 1;
+  // sculpted door surface: a scallop that ends in a crisp shoulder crease, fading out into the wheel-arch haunches
+  const scT = t => t < 0.3 || t > 0.72 ? 0 : t < 0.66 ? smooth((t - 0.3) / 0.36) : 1 - smooth((t - 0.66) / 0.06);
+  const scX = x => P.scallop * smooth((x - (xr + Ra * 0.75)) / 0.45) * smooth((xf - Ra * 0.9 - x) / 0.35);
+  const sideZ0 = (x, y) => { const f = floor0(x), s = ys0(x), t = clamp((y - f) / (s - f), 0, 1); return hw(x) * pf(t) - scX(x) * scT(t); };
   const zs0 = x => hw(x) * pf(1);
-  const topY0 = (x, z) => { const s = ys0(x), u = clamp(Math.abs(z) / zs0(x), 0, 1); return s + (Hc0(x) - s) * (1 - u * u * u * u); };
+  const hoodB = x => P.hoodBulge * smooth((x - cowlX) / 0.25) * smooth((noseX - 0.3 - x) / 0.5);
+  const topY0 = (x, z) => {
+    const s = ys0(x), u = clamp(Math.abs(z) / zs0(x), 0, 1);
+    return s + (Hc0(x) - s) * (1 - u * u * u * u) + (x > cowlX ? hoodB(x) * (1 - smooth((u - 0.3) / 0.14)) : 0);
+  };
 
   // rounding of the nose and tail
   const shr = x => {
@@ -83,16 +91,16 @@ export function makeSurface(car) {
     topY: (x, Z) => yFwd(x, topY0(x, Z / shr(x).sz)),
   };
   const mkEnd = (x, B) => ({ x, B, a: S.floorY(x), b: S.shoulderY(x), h: S.topC(x), zs: S.zTop(x) });
-  S.ends = { 1: mkEnd(noseX, 0.05), [-1]: mkEnd(tailX, 0.04) };
+  S.ends = { 1: mkEnd(noseX, P.noseBulge), [-1]: mkEnd(tailX, P.tailBulge) };
   S.capHalf = (end, Y) => {
     const e = S.ends[end];
     return Y <= e.b ? S.sideZ(e.x, Y) : e.zs * Math.pow(clamp(1 - (Y - e.b) / Math.max(1e-4, e.h - e.b), 0, 1), 0.25);
   };
   S.capX = (end, Y, Z) => {
     const e = S.ends[end];
-    const g = (Y <= e.a || Y >= e.h) ? 0 : Math.sqrt(Math.sin(Math.PI * (Y - e.a) / (e.h - e.a)));
+    const g = (Y <= e.a || Y >= e.h) ? 0 : Math.pow(Math.sin(Math.PI * Math.pow((Y - e.a) / (e.h - e.a), 0.8)), 0.6);  // bumper sticks out most just below mid height
     const Zr = S.capHalf(end, Y), u = Zr > 1e-4 ? clamp(Z / Zr, -1, 1) : 1;
-    return e.x + end * e.B * (1 - u * u) * g;
+    return e.x + end * e.B * (1 - Math.pow(Math.abs(u), 2.6)) * g;
   };
   return S;
 }
@@ -123,7 +131,7 @@ function halfRing(S, x) {
   const zo = S.sideZ0(x, ya), zl = zo - 0.03, zi = inArch ? zo - WELL : zl;
   const yc = inArch ? Math.max(f, Math.min(ya + 0.05, s - 0.02, S.topY0(x, zi) - 0.02)) : f;
   const p = [[f, 0], [f, zi], [yc, zi], [yc, zl], [ya, zl], [ya, zo]];
-  for (let k = 1; k <= NS; k++) { const y = lerp(ya, s, k / NS); p.push([y, S.sideZ0(x, y)]); }
+  for (let k = 1; k <= NS; k++) { const y = lerp(ya, s, TS[k - 1]); p.push([y, S.sideZ0(x, y)]); }
   for (let k = 1; k <= NT; k++) { const z = zS * (1 - k / NT); p.push([S.topY0(x, z), z]); }
   return p.map(([y, z]) => S.pt(x, y, z));
 }
@@ -148,7 +156,7 @@ export function buildShell(S, M) {
     return 'paint';
   });
   // bulged end caps
-  const NC = 12;
+  const NC = 20;
   for (const end of [1, -1]) {
     const half = end > 0 ? halves[halves.length - 1] : halves[0];
     const rows = half.map(p => { const r = []; for (let c = 0; c <= NC; c++) { const z = p.z * (1 - 2 * c / NC); r.push(V(S.capX(end, p.y, z), p.y, z)); } return r; });
@@ -158,30 +166,31 @@ export function buildShell(S, M) {
   // greenhouse
   const gx = [];
   for (let x = S.deckX; x <= S.cowlX; x += 0.035) gx.push(x);
-  const bpX = lerp(S.wsX, S.rwX, 0.6);
-  gx.push(S.cowlX, S.wsX, S.rwX, bpX - 0.035, bpX + 0.035);
+  const four = S.car.doors === 4, bpX = lerp(S.wsX, S.rwX, four ? 0.46 : 0.6), cpX = lerp(S.rwX, S.wsX, four ? 0.04 : 0.1);
+  gx.push(S.cowlX, S.wsX, S.rwX, bpX - 0.035, bpX + 0.035, cpX);
   gx.sort((a, b) => a - b);
   const NR = 7, P = S.P;
   const gHalf = x => {
     const g = S.gb(x), y0 = S.topY0(x, g) - 0.012, top = S.roofY(x), hc = Math.max(0, top - y0);
     const yE = top - 0.06 * Math.min(1, hc / 0.3), hs = Math.max(0, yE - y0), tum = P.tumble;
     const zr = g - hs * tum - 0.03 * Math.min(1, hs / 0.15), yr = y0 + hs * 0.99;
-    const p = [[y0, g], [y0 + 0.45 * hs, g - 0.45 * hs * tum], [y0 + 0.86 * hs, g - 0.86 * hs * tum], [yr, zr]];
+    const p = [[y0, g], [y0 + 0.08 * hs, g - 0.08 * hs * tum], [y0 + 0.45 * hs, g - 0.45 * hs * tum], [y0 + 0.86 * hs, g - 0.86 * hs * tum], [yr, zr]];
     for (let k = 1; k <= NR; k++) { const z = zr * (1 - k / NR); p.push([yr + (top - yr) * (1 - sq(z / zr)), z]); }
     return p.map(([y, z]) => S.pt(x, y, z));
   };
   const gHalves = gx.filter((x, i) => i === 0 || x - gx[i - 1] > 0.002).map(x => ({ x, h: gHalf(x) }));
-  const gn = 4 + NR, gM = 2 * gn - 2;
+  const gn = 5 + NR, gM = 2 * gn - 2;
   loft(mb, gHalves.map(o => fullRing(o.h)), (i, j) => {
     const hs = j < gn - 1 ? j : gM - 1 - j, xm = (gHalves[i].x + gHalves[i + 1].x) / 2;
-    if (hs < 2) return Math.abs(xm - bpX) < 0.035 ? 'trim' : 'glass';
-    if (hs === 2) return 'paint';
+    if (hs === 0) return 'trim';                                   // belt-line window surround
+    if (hs < 3) return xm < cpX ? 'paint' : Math.abs(xm - bpX) < 0.035 ? 'trim' : 'glass';   // C-pillar / B-pillar / side glass
+    if (hs === 3) return 'paint';
     return (xm > S.wsX || xm < S.rwX) ? 'glass' : 'roof';
   });
 
   const meshes = [];
   for (const k of mb.keys()) {
-    const g = mb.geometry(k, k === 'glass' ? 0.5 : 0.8, k === 'roof' ? 9 : 0);
+    const g = mb.geometry(k, k === 'glass' ? 0.5 : 0.8, k === 'roof' ? 9 : k === 'paint' ? 26 : 0);
     if (!g) continue;
     const m = new THREE.Mesh(g, M[k]);
     m.name = k; m.castShadow = k !== 'glass'; m.receiveShadow = false;
@@ -198,11 +207,11 @@ export function patchTop(S, x0, x1, zA, zB, off = 0.006, nu = 16, nv = 6) {
   return gridGeometry((u, v) => { const x = lerp(x0, x1, u), z = lerp(zA(u, x), zB(u, x), v); return V(x, S.topY(x, z) + off, z); }, nu, nv);
 }
 export function patchSide(S, side, x0, x1, yA, yB, off = 0.004, nu = 12, nv = 6) {
-  return gridGeometry((u, v) => { const x = lerp(x0, x1, u), y = lerp(yA(u, x), yB(u, x), v); return V(x, y, side * (S.sideZ(x, y) + off)); }, nu, nv);
+  return gridGeometry((u, v) => { const x = lerp(x0, x1, u), y = lerp(yA(u, x), yB(u, x), v); return V(x, y, side * (S.sideZ(x, y) + off)); }, nu, nv, 8, 'xy');
 }
 /** Patch on the nose (end = 1) or tail (end = -1) face. z0/z1 in metres; yA/yB return metres. */
 export function patchCap(S, end, z0, z1, yA, yB, off = 0.006, nu = 12, nv = 6) {
-  return gridGeometry((u, v) => { const z = lerp(z0, z1, u), y = lerp(yA(u), yB(u), v); return V(S.capX(end, y, z) + end * off, y, z); }, nu, nv);
+  return gridGeometry((u, v) => { const z = lerp(z0, z1, u), y = lerp(yA(u), yB(u), v); return V(S.capX(end, y, z) + end * off, y, z); }, nu, nv, 8, 'zy');
 }
 
 const FRONT_STYLES = {
@@ -213,6 +222,7 @@ const FRONT_STYLES = {
   wide: { c: [[-0.9, 0.9, 0.5, 0.84], [-0.6, 0.6, 0.08, 0.36]], m: [] },
   single: { c: [[-0.5, 0.5, 0.1, 0.78]], m: [[0.62, 0.9, 0.12, 0.5]] },
   super: { c: [[-0.22, 0.22, 0.08, 0.3]], m: [[0.3, 0.9, 0.08, 0.5]] },
+  horseshoe: { c: [[-0.17, 0.17, 0.18, 0.82]], m: [[0.3, 0.9, 0.08, 0.42]] },
 };
 
 /** Lights, grilles, shut-lines, mirrors, seats and exhaust tips. */
@@ -239,6 +249,9 @@ export function buildDetails(S, M, build, exhaust) {
   fs.c.forEach(r => capRect(1, r, M.grille));
   fs.m.forEach(r => { capRect(1, r, M.grille); capRect(1, [-r[1], -r[0], r[2], r[3]], M.grille); });
 
+  capRect(1, [-0.93, 0.93, 0.0, 0.055], M.trim, 0.007);                 // chin
+  capDisc(1, 0, 0.9, 0.028, M.chrome, 0.009); capDisc(-1, 0, 0.82, 0.028, M.chrome, 0.009);   // badges
+
   // ---- headlights
   const hs = car.style.head;
   if (hs === 'swept' || hs === 'slit') {
@@ -249,9 +262,11 @@ export function buildDetails(S, M, build, exhaust) {
     both(patchTop(S, x0, x1, inner, outer, 0.006, 18, 6), M.lens, 1);
     both(patchTop(S, x0 + 0.04, x1 - 0.01, (u, x) => inner(u, x) + 0.012, (u, x) => inner(u, x) + 0.032, 0.009, 18, 1), M.led, 2);
     if (hs === 'swept') {
-      const xc = noseX - 0.19, rz = 0.05, rx = 0.06;
-      const zc = x => 0.9 * S.zTop(x) - 0.105;
+      for (const [xc, dz] of [[noseX - 0.19, 0.105], [noseX - 0.3, 0.085]]) {
+      const rz = 0.045, rx = 0.052;
+      const zc = x => 0.9 * S.zTop(x) - dz;
       both(patchTop(S, xc - rx, xc + rx, (u, x) => zc(x) - rz * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1))), (u, x) => zc(x) + rz * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1))), 0.009, 16, 3), M.led, 2);
+      }
     }
   } else if (hs === 'round') {
     const xc = noseX - 0.34, rx = 0.17, rz = 0.14, zc = x => 0.63 * S.zTop(x);
@@ -283,12 +298,16 @@ export function buildDetails(S, M, build, exhaust) {
 
   // ---- shut-lines and side intakes
   const sill = x => S.floorY(x) + 0.07, belt = x => S.shoulderY(x) - 0.012;
-  const doorF = S.cowlX - 0.04, doorR = lerp(S.wsX, S.rwX, 0.6) - 0.1;
+  const four = car.doors === 4, bp = lerp(S.wsX, S.rwX, four ? 0.46 : 0.6);
+  const doorF = S.cowlX - 0.04, doorR = four ? Math.max(S.xr + S.Ra * 0.55, S.rwX - 0.1) : bp - 0.1;
   for (const s of [1, -1]) {
-    for (const x of [doorF, doorR]) add(patchSide(S, s, x, x + 0.008, (u, xx) => sill(xx), (u, xx) => belt(xx), 0.003, 1, 10), M.seam);
+    for (const x of four ? [doorF, bp, doorR] : [doorF, doorR]) add(patchSide(S, s, x, x + 0.008, (u, xx) => sill(xx), (u, xx) => belt(xx), 0.003, 1, 10), M.seam);
     add(patchSide(S, s, doorF, doorR + 0.008, (u, x) => sill(x), (u, x) => sill(x) + 0.008, 0.003, 14, 1), M.seam);
     // black rocker panel visually lightens the body side
     add(patchSide(S, s, S.xr + S.Ra + 0.02, S.xf - S.Ra - 0.02, (u, x) => S.floorY(x) + 0.002, (u, x) => S.floorY(x) + 0.062, 0.004, 14, 2), M.trim);
+    if (four) add(patchSide(S, s, bp - 0.2, bp - 0.06, (u, x) => belt(x) - 0.1, (u, x) => belt(x) - 0.075, 0.006, 4, 1), M.trim);
+    // fuel filler
+    if (s > 0) { const xq = S.xr + 0.05, yq = S.wcY + S.Ra + 0.1, rq = 0.065; if (yq + rq < belt(xq)) add(patchSide(S, s, xq - rq, xq + rq, u => yq - rq * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1))), u => yq + rq * Math.sqrt(Math.max(0, 1 - sq(2 * u - 1))), 0.0025, 16, 2), M.seamThin); }
     // door handle
     add(patchSide(S, s, doorR - 0.2, doorR - 0.06, (u, x) => belt(x) - 0.1, (u, x) => belt(x) - 0.075, 0.006, 4, 1), M.trim);
     if (car.layout === 'mid') {
@@ -322,6 +341,15 @@ export function buildDetails(S, M, build, exhaust) {
       add(patchTop(S, xv, xv + 0.045, (u, x) => s * 0.16 * S.zTop(x), (u, x) => s * 0.46 * S.zTop(x), 0.008, 2, 6), M.grille, 2);
     }
   }
+
+  // ---- hood scoop
+  if (car.scoop) {
+    const xs0 = lerp(hoodBack, hoodFront, 0.42), sc = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.07, 0.5), M.paint);
+    sc.position.set(xs0, S.topY(xs0, 0) + 0.02, 0); sc.rotation.z = -0.07; sc.castShadow = true; g.add(sc);
+    const mouth = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.045), M.grille); mouth.rotation.y = Math.PI / 2; mouth.position.set(xs0 + 0.172, S.topY(xs0, 0) + 0.035, 0); g.add(mouth);
+  }
+  // ---- wipers
+  for (const zw of [0.22, -0.28]) { const w = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.012, 0.46), M.seam); w.position.set(S.cowlX - 0.02, S.topY(S.cowlX, zw) + 0.02, zw); g.add(w); }
 
   // ---- mirrors
   const mx = S.cowlX - 0.1;

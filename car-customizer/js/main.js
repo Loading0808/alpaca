@@ -7,8 +7,9 @@ import { Car } from './car.js';
 import { EngineAudio } from './audio.js';
 import { computeStats, buildSheet, resolve, maxDrop, slamDrop } from './stats.js';
 import { initUI } from './ui.js';
+import { Drive } from './drive.js';
 
-const STORE = 'apex-garage-build-v1';
+const STORE = 'apex-garage-saves-v2', OLD_STORE = 'apex-garage-build-v1';
 const $ = id => document.getElementById(id);
 
 const stage = createStage($('view'));
@@ -16,15 +17,17 @@ const M = createMaterials();
 const car = new Car(M);
 stage.scene.add(car.root);
 const audio = new EngineAudio();
+const drive = new Drive(stage, car, audio);
 
 const app = {
   build: defaultBuild(CARS[0]),
   toggles: { xray: false, lights: false, turntable: false, dyno: false },
-  aired: false,
+  aired: false, slot: null, driving: false,
   car: () => byId(CARS, app.build.carId),
   stats: () => computeStats(app.build),
   stockStats: () => computeStats(defaultBuild(app.car())),
   sheet: () => buildSheet(app.build),
+  statsFor: b => computeStats(b),
 };
 
 // ---- engine state
@@ -53,7 +56,7 @@ app.change = (fn, level = 'rebuild', rerender = true) => {
 
 app.selectCar = id => {
   if (id === app.build.carId) return;
-  stopEngine();
+  stopEngine(); app.slot = null;
   app.build = defaultBuild(byId(CARS, id)); app.aired = false; airOffset = 0;
   rebuild(); stats = app.stats(); ui.refresh(); app.view('q');
   ui.toast(`${app.car().brand} ${app.car().name} rolled in`);
@@ -89,17 +92,65 @@ app.toggleAir = () => {
   if (audio.ensure()) audio._burst({ dur: app.aired ? 0.9 : 0.6, f0: app.aired ? 5200 : 2400, f1: app.aired ? 1200 : 4200, q: 0.9, gain: 0.16 });
 };
 
-app.save = () => { localStorage.setItem(STORE, JSON.stringify(app.build)); ui.toast('Build saved to this browser'); };
-app.load = () => {
+// ---- saved cars (any number, stored in this browser)
+const readSaves = () => {
   try {
-    const b = JSON.parse(localStorage.getItem(STORE));
-    if (!b || !CARS.some(c => c.id === b.carId)) return ui.toast('No saved build found');
-    stopEngine();
-    app.build = { ...defaultBuild(byId(CARS, b.carId)), ...b }; app.aired = false; airOffset = 0;
-    rebuild(); stats = app.stats(); ui.refresh(); ui.toast('Saved build loaded');
-  } catch (_) { ui.toast('Saved build could not be read'); }
+    const list = JSON.parse(localStorage.getItem(STORE)) || [];
+    const old = localStorage.getItem(OLD_STORE);                      // migrate the single save from v1
+    if (old) { list.push({ id: 'v1', name: 'My first build', build: JSON.parse(old), ts: Date.now() }); localStorage.removeItem(OLD_STORE); localStorage.setItem(STORE, JSON.stringify(list)); }
+    return list.filter(s => s && s.build && CARS.some(c => c.id === s.build.carId));
+  } catch (_) { return []; }
 };
-app.reset = () => { app.build = defaultBuild(app.car()); app.aired = false; airOffset = 0; rebuild(); stats = app.stats(); ui.refresh(); ui.toast('Returned to factory spec'); };
+const writeSaves = list => { try { localStorage.setItem(STORE, JSON.stringify(list)); return true; } catch (_) { ui.toast('Browser storage is full or blocked'); return false; } };
+const snapshot = () => JSON.parse(JSON.stringify(app.build));
+app.saves = readSaves;
+app.defaultName = () => { const c = app.car(), n = readSaves().filter(s => s.build.carId === c.id).length; return `${c.name.replace(/\s*\(.*\)/, '')} build ${n + 1}`; };
+app.saveNew = name => {
+  const list = readSaves(), id = 's' + Date.now().toString(36);
+  list.unshift({ id, name: (name || '').trim().slice(0, 40) || app.defaultName(), build: snapshot(), ts: Date.now() });
+  if (writeSaves(list)) { app.slot = id; ui.refresh(); ui.toast(`Saved “${list[0].name}” — ${list.length} car${list.length > 1 ? 's' : ''} in your garage`); }
+};
+app.saveOver = id => {
+  const list = readSaves(), s = list.find(x => x.id === id); if (!s) return app.saveNew();
+  s.build = snapshot(); s.ts = Date.now();
+  if (writeSaves(list)) { app.slot = id; ui.refresh(); ui.toast(`Updated “${s.name}”`); }
+};
+app.save = () => (app.slot && readSaves().some(s => s.id === app.slot) ? app.saveOver(app.slot) : app.saveNew());
+app.loadSave = id => {
+  const s = readSaves().find(x => x.id === id); if (!s) return ui.toast('That save no longer exists');
+  stopEngine();
+  const base = defaultBuild(byId(CARS, s.build.carId));
+  app.build = { ...base, ...s.build, paint: { ...base.paint, ...s.build.paint }, rim: { ...base.rim, ...s.build.rim }, susp: { ...base.susp, ...s.build.susp } };
+  app.aired = false; airOffset = 0; app.slot = id;
+  rebuild(); stats = app.stats(); ui.refresh(); ui.toast(`Loaded “${s.name}”`);
+};
+app.deleteSave = id => { const list = readSaves().filter(s => s.id !== id); if (writeSaves(list)) { if (app.slot === id) app.slot = null; ui.refresh(); ui.toast('Save deleted'); } };
+app.renameSave = (id, name) => { const list = readSaves(), s = list.find(x => x.id === id); if (s && name.trim()) { s.name = name.trim().slice(0, 40); writeSaves(list); } };
+
+// ---- drive mode
+const keys = {};
+const hud = { root: $('driveHud'), speed: $('hudSpeed'), gear: $('hudGear'), lap: $('hudLap'), last: $('hudLast'), best: $('hudBest'), laps: $('hudLaps'), place: $('hudPlace') };
+const fmtLap = t => t ? `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}` : '—:——.——';
+app.drive = id => {
+  $('driveMenu').classList.remove('show');
+  if (app.toggles.xray) app.toggle('xray');
+  if (app.toggles.turntable) app.toggle('turntable');
+  airOffset = 0; app.aired = false; car.applyStance(app.build, currentDrop());
+  const world = drive.enter(id, stats, car.r);
+  app.driving = true; document.body.classList.add('driving');
+  hud.place.textContent = world.name; hud.laps.style.display = world.hasLaps ? '' : 'none';
+  if (!eng.running) { audio.start(); eng.running = true; ui.setRunning(true); }
+  eng.cranking = 0; eng.input = 0;
+  $('view').focus();
+};
+app.exitDrive = () => {
+  if (!app.driving) return;
+  drive.exit(); app.driving = false; document.body.classList.remove('driving');
+  for (const k in keys) keys[k] = false;
+  eng.throttle = 0; eng.input = 0; eng.rpm = car.r.engine.idle;
+  car.applyStance(app.build, currentDrop()); app.view('q', 0.01);
+};
+app.reset = () => { app.slot = null; app.build = defaultBuild(app.car()); app.aired = false; airOffset = 0; rebuild(); stats = app.stats(); ui.refresh(); ui.toast('Returned to factory spec'); };
 app.copySheet = () => {
   const s = app.sheet(), st = app.stats();
   const txt = [`APEX GARAGE — ${app.car().brand} ${app.car().name}`, `${Math.round(st.hp)} hp · ${Math.round(st.tq)} Nm · ${Math.round(st.weight)} kg · 0-100 ${st.t100.toFixed(2)} s`, '',
@@ -153,18 +204,30 @@ rev.addEventListener('pointerdown', e => { rev.setPointerCapture(e.pointerId); p
 for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) rev.addEventListener(ev, () => press(false));
 $('btnStart').addEventListener('click', () => (eng.running ? stopEngine() : startEngine()));
 $('vol').addEventListener('input', e => audio.setVolume(+e.target.value));
-$('btnSave').addEventListener('click', app.save); $('btnLoad').addEventListener('click', app.load);
+$('btnSave').addEventListener('click', app.save); $('btnLoad').addEventListener('click', () => ui.setCategory('garage'));
+$('btnDrive').addEventListener('click', () => $('driveMenu').classList.toggle('show'));
+$('driveClose').addEventListener('click', () => $('driveMenu').classList.remove('show'));
+for (const b of document.querySelectorAll('[data-world]')) b.addEventListener('click', () => app.drive(b.dataset.world));
+$('hudExit').addEventListener('click', () => app.exitDrive()); $('hudReset').addEventListener('click', () => drive.respawn()); $('hudCam').addEventListener('click', () => drive.nextCamera());
 $('btnReset').addEventListener('click', app.reset); $('btnShot').addEventListener('click', app.shot);
 window.addEventListener('keydown', e => {
-  if (e.target.matches('input, textarea') || e.repeat && e.code !== 'Space') return;
+  if (e.target.matches('input, textarea')) return;
+  if (app.driving) {
+    keys[e.code] = true;
+    if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
+    if (e.repeat) return;
+    if (e.code === 'Escape') app.exitDrive(); else if (e.code === 'KeyR') drive.respawn(); else if (e.code === 'KeyC') drive.nextCamera(); else if (e.code === 'KeyL') app.toggle('lights');
+    return;
+  }
+  if (e.repeat && e.code !== 'Space') return;
   if (e.code === 'Space' || e.code === 'KeyW') { e.preventDefault(); press(true); }
   else if (e.code === 'KeyE') eng.running ? stopEngine() : startEngine();
   else if (e.code === 'KeyX') app.toggle('xray');
   else if (e.code === 'KeyL') app.toggle('lights');
   else if (e.code === 'KeyT') app.toggle('turntable');
 });
-window.addEventListener('keyup', e => { if (e.code === 'Space' || e.code === 'KeyW') press(false); });
-window.addEventListener('blur', () => press(false));
+window.addEventListener('keyup', e => { keys[e.code] = false; if (!app.driving && (e.code === 'Space' || e.code === 'KeyW')) press(false); });
+window.addEventListener('blur', () => { press(false); for (const k in keys) keys[k] = false; });
 
 // ---- boot
 const ui = initUI(app);
@@ -183,8 +246,19 @@ function frame() {
     airOffset += Math.sign(airTarget - airOffset) * Math.min(Math.abs(airTarget - airOffset), dt * 0.06);
     car.applyStance(app.build, currentDrop());
   }
-  stepEngine(dt);
-  car.update(dt, eng.rpm, eng.throttle, eng.running, app.toggles.dyno, stats.redline);
+  if (app.driving) {
+    const d = drive.update(dt, {
+      fwd: keys.KeyW || keys.ArrowUp ? 1 : 0, back: keys.KeyS || keys.ArrowDown ? 1 : 0,
+      steer: (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0), hand: keys.Space ? 1 : 0,
+    });
+    eng.rpm = d.rpm; eng.throttle = d.throttle; eng.boost = d.boost;
+    car.update(dt, eng.rpm, 0, true, false, stats.redline);
+    hud.speed.textContent = Math.round(d.kmh); hud.gear.textContent = d.gear;
+    if (d.hasLaps) { hud.lap.textContent = d.lap.running ? fmtLap(d.time - d.lap.start) : 'Cross the line'; hud.last.textContent = fmtLap(d.lap.last); hud.best.textContent = fmtLap(d.lap.best); }
+  } else {
+    stepEngine(dt);
+    car.update(dt, eng.rpm, eng.throttle, eng.running, app.toggles.dyno, stats.redline);
+  }
   ui.drawTach(eng.rpm, eng.running, eng.boost, stats);
   stage.update(dt);
   stage.renderer.render(stage.scene, stage.camera);
@@ -193,4 +267,4 @@ function frame() {
 frame();
 
 // handy for tinkering from the DevTools console
-window.apex = { app, car, stage, audio, eng, maxDrop };
+window.apex = { app, car, stage, audio, eng, drive, keys, maxDrop };

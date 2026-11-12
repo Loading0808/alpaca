@@ -23,7 +23,7 @@ function h(tag, attrs = {}, ...kids) {
 
 const CATS = [
   ['car', 'Vehicle'], ['paint', 'Paint'], ['body', 'Body Kit'], ['wheels', 'Wheels'], ['tires', 'Tyres'], ['susp', 'Stance'],
-  ['engine', 'Engine'], ['boost', 'Boost'], ['exhaust', 'Exhaust'], ['intake', 'Intake'], ['sheet', 'Build Sheet'],
+  ['engine', 'Engine'], ['boost', 'Boost'], ['exhaust', 'Exhaust'], ['intake', 'Intake'], ['sheet', 'Build Sheet'], ['garage', 'My Cars'],
 ];
 const VIEWS = [['q', '3/4'], ['front', 'Front'], ['side', 'Side'], ['rear', 'Rear'], ['top', 'Top'], ['wheel', 'Wheel'], ['engine', 'Engine']];
 const TOGGLES = [['xray', 'X-Ray'], ['lights', 'Lights'], ['turntable', 'Turntable'], ['dyno', 'Dyno']];
@@ -58,7 +58,7 @@ export function initUI(app) {
         CARS.filter(c => c.brand === brand).map(c => {
           const e = byId(ENGINES, c.stock.engine);
           return card({ name: c.name, desc: `${e.name}${c.stock.turbo !== 'none' ? ' · turbocharged' : c.stock.sc !== 'none' ? ' · supercharged' : ''}` }, c.id === cur, money(c.price), () => app.selectCar(c.id),
-            [[c.drive], [c.layout === 'front' ? 'Front-engine' : c.layout === 'mid' ? 'Mid-engine' : 'Rear-engine'], [c.weight + ' kg']]);
+            [[c.drive], [c.doors === 4 ? '4-door' : '2-door'], [c.layout === 'front' ? 'Front-engine' : c.layout === 'mid' ? 'Mid-engine' : 'Rear-engine'], [c.weight + ' kg']]);
         }),
         h('div', { class: 'note' }, 'Switching vehicle starts a fresh factory build. Save first if you want to keep the current one.'),
       ];
@@ -146,6 +146,28 @@ export function initUI(app) {
         [i.gain ? [`Power ${pct(i.gain)}`, 'up'] : null, [`Induction ${Math.round(i.loud * 100)}%`]].filter(Boolean))),
       h('div', { class: 'note' }, 'Use the X-Ray toggle or the Engine view to see the intake, turbos and blower on the engine.')];
     },
+    garage() {
+      const list = app.saves(), input = h('input', { type: 'text', maxlength: 40, placeholder: app.defaultName(), 'aria-label': 'Name for this save' });
+      const save = () => app.saveNew(input.value);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+      return [
+        sec('Save the car on the turntable'),
+        h('div', { class: 'save-row' }, input, h('button', { class: 'btn btn-drive', onclick: save }, 'Save as new')),
+        sec('Saved cars', String(list.length)),
+        list.length ? list.map(s => {
+          const c = byId(CARS, s.build.carId), st = app.statsFor(s.build), on = s.id === app.slot;
+          return h('div', { class: 'slot' + (on ? ' on' : '') },
+            h('div', { class: 'slot-top' }, h('span', { style: `background:${s.build.paint.color}` }), h('b', {}, s.name)),
+            h('p', {}, `${c.brand} ${c.name} · ${Math.round(st.hp)} hp · ${new Date(s.ts).toLocaleDateString()}`),
+            h('div', { class: 'chip-row' },
+              h('button', { class: 'chip' + (on ? '' : ' on'), onclick: () => app.loadSave(s.id) }, on ? 'Reload' : 'Load'),
+              h('button', { class: 'chip', onclick: () => app.saveOver(s.id) }, 'Overwrite'),
+              h('button', { class: 'chip', onclick: () => { const n = prompt('Rename this car', s.name); if (n) { app.renameSave(s.id, n); renderPanel(); } } }, 'Rename'),
+              h('button', { class: 'chip', onclick: () => { if (confirm(`Delete “${s.name}”?`)) app.deleteSave(s.id); } }, 'Delete')));
+        }) : h('div', { class: 'note' }, 'No saved cars yet. Build something, give it a name and press “Save as new”. You can keep as many as you like.'),
+        h('div', { class: 'note' }, 'The Save button in the top bar updates the car you last loaded or saved, or creates a new save if there is none.'),
+      ];
+    },
     sheet() {
       const s = app.sheet();
       return [
@@ -153,6 +175,7 @@ export function initUI(app) {
           h('tr', { class: 'total' }, h('td', {}, 'Total'), h('td', {}), h('td', {}, money(s.total)))),
         h('button', { class: 'btn wide-btn', style: 'margin-top:14px', onclick: app.copySheet }, 'Copy build sheet'),
         h('button', { class: 'btn wide-btn', onclick: app.save }, 'Save build'),
+        h('button', { class: 'btn wide-btn btn-drive', onclick: () => document.getElementById('driveMenu').classList.add('show') }, 'Drive this car'),
         h('button', { class: 'btn wide-btn', onclick: app.reset }, 'Reset to factory'),
       ];
     },

@@ -16,7 +16,7 @@ export class Car {
     this.root = new THREE.Group(); this.root.position.y = 0.05;
     this.body = new THREE.Group(); this.root.add(this.body);
     this.wheels = []; this.struts = []; this.flames = [];
-    this.xray = false; this.lights = false; this.flameT = 0; this.roll = 0; this.time = 0;
+    this.xray = false; this.lights = false; this.dynRoll = 0; this.dynPitch = 0; this.flameT = 0; this.roll = 0; this.time = 0;
     this.flameLight = new THREE.PointLight(0xff8a30, 0, 5, 2); this.root.add(this.flameLight);
     this.beams = [1, -1].map(() => { const s = new THREE.SpotLight(0xdfe8ff, 0, 16, 0.5, 0.6, 1.2); this.root.add(s, s.target); return s; });
   }
@@ -58,7 +58,7 @@ export class Car {
     for (const [ax, side] of [[0, 1], [0, -1], [1, 1], [1, -1]]) {
       const width = car.tireW[ax] + (r.tire.id === 'drag' ? (ax ? 0.035 : 0) : r.tire.dW);
       const w = buildWheel({ R: car.tireR, width, rimIn, style: build.rim.style, tire: r.tire, M });
-      const pivot = new THREE.Group(); w.position.y = car.tireR; if (side < 0) w.rotation.y = Math.PI;
+      const pivot = new THREE.Group(); pivot.rotation.order = 'YXZ'; w.position.y = car.tireR; if (side < 0) w.rotation.y = Math.PI;
       pivot.add(w); pivot.userData = { ax, side, width: Math.max(width, w.userData.bw), spin: w.userData.spin };
       this.root.add(pivot); this.wheels.push(pivot);
       const st = buildStrut(M, !!r.susp.air); st.userData = { ax, side }; this.root.add(st); this.struts.push(st);
@@ -109,6 +109,15 @@ export class Car {
     for (const s of this.beams) s.intensity = on ? 60 : 0;
   }
 
+  /** Driving: steer the front wheels and roll all four. spinF / spinR are angle increments in radians. */
+  setWheels(steer, spinF, spinR) {
+    for (const p of this.wheels) {
+      const { ax, side, spin } = p.userData;
+      if (ax === 0) p.rotation.y = steer;
+      spin.rotation.z -= side * (ax ? spinR : spinF);
+    }
+  }
+
   pop(intensity = 1) { this.flameT = Math.min(1.3, 0.7 + intensity * 0.5); }
 
   update(dt, rpm, throttle, running, dyno, redline) {
@@ -118,7 +127,8 @@ export class Car {
     const target = running ? throttle * 0.012 : 0;
     this.roll += (target - this.roll) * Math.min(1, dt * 9);
     const shake = running ? Math.sin(this.time * (20 + k * 90)) * 0.0007 * (1.2 - k) : 0;
-    this.body.rotation.x = this.roll + shake * 1.5;
+    this.body.rotation.x = this.roll + shake * 1.5 + this.dynRoll;
+    this.body.rotation.z = this.dynPitch;
     this.body.position.y = -this.drop + shake;
     // flames
     this.flameT = Math.max(0, this.flameT - dt * 8);
@@ -128,7 +138,7 @@ export class Car {
     // dyno rollers
     if (dyno && running) {
       const w = (rpm / 60) * Math.PI * 2 / 9 * dt;
-      for (const p of this.wheels) if (this.r.car.drive === 'AWD' || p.userData.ax === 1) p.userData.spin.rotation.z -= w * p.userData.side;
+      for (const p of this.wheels) if (this.r.car.drive === 'AWD' || p.userData.ax === (this.r.car.drive === 'FWD' ? 0 : 1)) p.userData.spin.rotation.z -= w * p.userData.side;
     }
   }
 }

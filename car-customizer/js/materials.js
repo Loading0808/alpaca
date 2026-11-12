@@ -35,6 +35,24 @@ export function titaniumTexture() {
   }, false);
 }
 
+export function grilleTexture() {
+  const t = canvasTex(64, 56, (g, w, h) => {
+    g.fillStyle = '#020203'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#2b2d33'; g.lineWidth = 3;
+    const hex = (cx, cy, r) => { g.beginPath(); for (let i = 0; i < 6; i++) { const a = Math.PI / 3 * i + Math.PI / 6; g[i ? 'lineTo' : 'moveTo'](cx + r * Math.cos(a), cy + r * Math.sin(a)); } g.closePath(); g.stroke(); };
+    for (const [x, y] of [[0, 0], [64, 0], [0, 56], [64, 56], [32, 28]]) hex(x, y, 18.5);
+  });
+  t.repeat.set(5, 5); return t;
+}
+
+/** Sparkle under the clear-coat for metallic and pearl paint. */
+export function flakeTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d'), d = g.createImageData(256, 256);
+  for (let i = 0; i < d.data.length; i += 4) { d.data[i] = 128 + (Math.random() - 0.5) * 150; d.data[i + 1] = 128 + (Math.random() - 0.5) * 150; d.data[i + 2] = 255; d.data[i + 3] = 255; }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+
 export function createMaterials() {
   const DS = THREE.DoubleSide;
   const std = (o) => new THREE.MeshStandardMaterial(o);
@@ -52,8 +70,9 @@ export function createMaterials() {
     led: std({ color: '#c4ccd8', side: DS, emissive: '#dfeaff', emissiveIntensity: 0.25, roughness: 0.3 }),
     ledRed: std({ color: '#5a0508', side: DS, emissive: '#ff1418', emissiveIntensity: 0.35, roughness: 0.3 }),
     plate: std({ color: '#e8e8e2', side: DS, roughness: 0.6 }),
-    grille: std({ color: '#060607', side: DS, roughness: 0.6, metalness: 0.3 }),
+    grille: std({ color: '#ffffff', map: grilleTexture(), side: DS, roughness: 0.55, metalness: 0.4 }),
     seam: std({ color: '#050505', side: DS, roughness: 0.8 }),
+    seamThin: std({ color: '#000', side: DS, roughness: 0.8, wireframe: false, transparent: true, opacity: 0.35 }),
     carbon: phys({ color: '#ffffff', map: carbonMap, side: DS, roughness: 0.3, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 }),
     blackGloss: phys({ color: '#070708', side: DS, roughness: 0.25, clearcoat: 1 }),
     rivet: std({ color: '#c9ccd1', metalness: 1, roughness: 0.3 }),
@@ -80,7 +99,7 @@ export function createMaterials() {
     ghost: std({ color: '#7fb4ff', transparent: true, opacity: 0.1, depthWrite: false, side: DS, metalness: 0.2, roughness: 0.4 }),
     flame: new THREE.MeshBasicMaterial({ color: '#ffa238', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: DS }),
   };
-  M._carbonMap = carbonMap;
+  M._carbonMap = carbonMap; M._flake = flakeTexture();
   return M;
 }
 
@@ -99,6 +118,8 @@ export function applyAppearance(M, build) {
   M.paint.color.set(build.paint.color);
   Object.assign(M.paint, f);
   M.paint.iridescenceIOR = 1.6;
+  const flake = build.paint.finish === 'metallic' || build.paint.finish === 'pearl';
+  M.paint.normalMap = flake ? M._flake : null; M.paint.normalScale.set(0.16, 0.16);
   M.paint.clearcoatRoughness = build.paint.finish === 'satin' ? 0.4 : 0.04;
 
   // roof: body colour / gloss black / carbon
