@@ -64,6 +64,9 @@ how it accelerates, grips and slides.
 | Cycle transmission mode | `T` |
 | Cycle driving mode | `M` |
 | Air suspension preset: Show / Street / Track / Off-Road | `1` `2` `3` `4` |
+| Parachute: deploy; press again when stopped to repack | `P` |
+| ABS / traction control / stability control on-off | `Z` / `X` / `V` |
+| Launch control on-off | `G` |
 | Chat (multiplayer) | `Enter` to type, `Enter` to send, `Esc` to cancel |
 | Change camera (chase, close, hood, overhead) | `C` |
 | Put the car back on the road | `R` |
@@ -71,6 +74,8 @@ how it accelerates, grips and slides.
 
 **Locations**
 
+- **Apex Dragway** — quarter-mile strip with staging beams, a Christmas tree, timing boards
+  and a shutdown area with a sand trap. Day or night. See *Drag racing* below.
 - **Midnight Expressway** — a 6 km four-lane expressway loop at night with AI traffic, a
   suspension bridge over a river, two tunnels, overhead signs and a city on both sides.
   Traffic keeps a safe gap, changes lane to pass slower vehicles and reacts to you.
@@ -113,6 +118,67 @@ The four preset buttons are in the Stance panel, with separate front and rear he
 (set them differently for rake) and a live ground-clearance readout. Presets can be changed
 while driving and the suspension glides to the new height without interrupting anything. Each
 car remembers its last air settings.
+
+**Drag racing — Apex Dragway**
+
+Choose *1/4 mile* or *1/8 mile*, *Sportsman* or *Pro* tree and *Day* or *Night* under
+**Drag strip options** in the Drive menu, then **Go to the drag strip**.
+
+1. Tap `W` to creep forward. The top bulbs light when you are pre-staged, the second pair when
+   staged. Come off the throttle in the beams and the line-lock stops the car there.
+2. Hold still. The tree starts after a short random pause: three ambers half a second apart
+   then green (Sportsman), or all ambers then green 0.4 s later (Pro).
+3. Launch on green. Leaving before green is a red light and the run does not count.
+4. The time slip shows reaction time, 60 ft, 330 ft, 1/8 mile, 1000 ft and 1/4 mile times and
+   the trap speed (averaged over the last 66 ft). The finish-line boards show your E.T. and speed.
+5. Brake in the shutdown area (deploy the parachute with `P` if fitted), then press `R` to
+   return to the line.
+
+Clean runs go on the *Drag 1/4 mile* and *Drag 1/8 mile* boards in the Drive menu.
+
+**Parachute** — fit one in the garage under **Drag Setup** (single, cross-form or dual; five
+canopy designs; the dual needs a body at least 1.80 m wide). The pack is mounted on the rear
+of the car. `P` or the **Chute** button deploys it: the canopy streams out, inflates and its
+drag grows with the square of speed (about 0.9 g at 250 km/h, 0.3 g at 120 km/h on the test
+car). It can only be repacked once the car has stopped. It works on every map, and other
+players see it open.
+
+**Driver aids** — `Z` ABS, `X` traction control, `V` stability control; lamps on the dashboard
+are green when on, struck through when off and yellow while working.
+
+| System | On | Off |
+| --- | --- | --- |
+| ABS | Each axle is held just below lock-up, so you can brake and steer | Braking too hard locks the wheels: longer stops and no steering until you ease off |
+| TCS | Engine torque is cut to what the surface can take, earlier on loose ground | Excess torque spins the driven wheels, which then push less and slide sideways |
+| ESP | Detects oversteer and understeer, brakes individual wheels to correct the yaw and trims the throttle; catches spins | Nothing intervenes — the car will spin if provoked |
+
+Driving modes set the defaults (Comfort, Sport, Track, Custom: all on; Race: ESP off; Drift:
+TCS and ESP off). If you switch one yourself, your choice is kept when you change mode until
+you press **Use mode defaults** in the Drive menu. In Custom mode the traction and stability
+sliders at 0 % switch those systems off.
+
+**Drag Setup panel** (garage; saved separately for every car and used on all maps)
+
+- **Launch control** — on/off (`G` while driving), launch rpm, and Grip / Balanced / Aggressive
+  wheelspin management. Hold the brake or handbrake, floor the throttle (the engine holds the
+  launch rpm and turbo cars build boost), then release.
+- **Gear ratios and final drive** — six ratios plus the final drive, with the top speed in
+  each gear shown. Shorter gearing accelerates harder and lowers top speed.
+- **Tyre pressure** — front and rear, 12–45 psi. Lower pressure gives more traction off the
+  line but less cornering grip and more rolling drag; higher pressure does the opposite.
+- **Boost pressure** — on turbocharged or supercharged builds, 60–170 % of the base boost.
+  Power follows boost until the engine's limit, where the wastegate holds it and the panel
+  says so.
+
+**Multiplayer drag racing** — connect as for multiplayer below, then press **Find drag race**
+to be paired with whoever is waiting on the same distance, or **Private drag room** for a
+code to share. Each racer gets a lane. When both are staged the server starts one tree for
+both and afterwards sends both players the same result: reaction times, elapsed times, trap
+speeds and the winner (first across the line; a red light loses). While you wait for an
+opponent you can make practice runs. Verified runs go on the **Online drag** board.
+The server rejects a run that is faster than physically possible, whose time does not match
+the server's own clock since the green light, or where the car's position stream never
+reached the finish.
 
 **Scoring**
 
@@ -231,6 +297,8 @@ car-customizer/
 │   ├── traffic.js      AI traffic for the expressway
 │   ├── score.js        Points, combo multiplier, records and leaderboard
 │   ├── drive.js        Drive mode: vehicle physics, driving modes, transmissions, cameras
+│   ├── drag.js         Drag race control: staging, tree, timing, time slip
+│   ├── chute.js        Parachute pack and canopy
 │   ├── net.js          Multiplayer client (WebSocket)
 │   ├── remote.js       Other players' cars and name tags
 │   ├── stats.js        Performance model and pricing

@@ -50,6 +50,9 @@ export class RemoteCars {
       e.car.root.visible = true; e.car.root.position.set(s.x, s.y, s.z); e.car.root.rotation.set(0, s.psi, 0);
       e.car.setWheels(s.st * 0.4, s.vx / e.car.S.R * dt, s.vx / e.car.S.R * dt);
       e.M.ledRed.emissiveIntensity = s.flags & 1 ? 4 : 1.4;
+      // parachute: the flag says it is out; the canopy fills and collapses locally
+      const out = !!(s.flags & 8); e.chuteOpen = (e.chuteOpen || 0) + ((out && s.vx > 4 ? 1 : out ? 0.3 : 0) - (e.chuteOpen || 0)) * Math.min(1, dt * 3);
+      e.car.chute.update(dt, e.chuteOpen, Math.abs(s.vx), out);
     }
   }
 }

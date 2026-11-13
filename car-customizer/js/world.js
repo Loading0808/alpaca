@@ -425,8 +425,145 @@ function buildHighway(renderer) {
   return world;
 }
 
+// ---------------------------------------------------------------------------
+// Apex Dragway — quarter-mile strip with staging lanes, a Christmas tree,
+// timing boards and a long shutdown area. Built for day or night.
+// ---------------------------------------------------------------------------
+export const DRAG = { FT60: 18.288, FT330: 100.584, EIGHTH: 201.168, FT1000: 304.8, QUARTER: 402.336, ROLLOUT: 0.33, PRE: -0.18, TRAP: 20.1168, LANE: 4.5 };
+function buildDrag(renderer, opts = {}) {
+  const night = !!opts.night, g = new THREE.Group(), HALF = 9.6, X0 = -75, X1 = 1150, r = rng(5);
+  const M = (c, ro = 0.7, me = 0.1) => new THREE.MeshStandardMaterial({ color: c, roughness: ro, metalness: me });
+  const box = (w, h, d, mat, x, y, z, ry = 0) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); b.position.set(x, y, z); b.rotation.y = ry; b.castShadow = b.receiveShadow = true; g.add(b); return b; };
+  const flat = (w, d, mat, x, z, y = 0.02) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat); m.rotation.x = -Math.PI / 2; m.position.set(x, y, z); m.receiveShadow = true; g.add(m); return m; };
+
+  // strip: prepared surface with a rubbered groove in each lane
+  const stripT = tex(256, 512, (c, w, h) => {
+    c.fillStyle = '#2a2c30'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9000; i++) { const v = 32 + Math.random() * 26; c.fillStyle = `rgba(${v},${v},${v + 2},0.5)`; c.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
+    for (const zc of [0.265, 0.735]) for (const o of [-0.045, 0.045]) { c.fillStyle = 'rgba(8,8,9,0.55)'; c.fillRect(0, (zc + o) * h - 9, w, 18); }
+    c.fillStyle = '#e8e8e8'; c.fillRect(0, h / 2 - 2, w, 4); c.fillRect(0, 4, w, 3); c.fillRect(0, h - 7, w, 3);
+  }, 60, 1);
+  flat(X1 - X0, HALF * 2, new THREE.MeshStandardMaterial({ map: stripT, roughness: 0.55, metalness: 0.1 }), (X0 + X1) / 2, 0);
+  flat(22, HALF * 2 - 0.4, new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.18, metalness: 0.3 }), -34, 0, 0.025);        // water box
+  const white = new THREE.MeshBasicMaterial({ color: night ? 0xbfc3c9 : 0xf1f1f1 });
+  flat(0.25, HALF * 2, white, 0, 0, 0.03);
+  for (const d of [DRAG.FT60, DRAG.FT330, DRAG.EIGHTH, DRAG.FT1000, DRAG.QUARTER]) flat(d === DRAG.EIGHTH || d === DRAG.QUARTER ? 0.5 : 0.12, HALF * 2, white, d, 0, 0.03);
+  const chk = tex(64, 32, (c) => { for (let x = 0; x < 8; x++) for (let y = 0; y < 4; y++) { c.fillStyle = (x + y) % 2 ? '#111' : '#f4f4f4'; c.fillRect(x * 8, y * 8, 8, 8); } }, 8, 1);
+  const finishLine = flat(1.2, HALF * 2, new THREE.MeshBasicMaterial({ map: chk }), DRAG.QUARTER + 0.9, 0, 0.032); finishLine.rotation.z = Math.PI / 2;
+  // sand trap at the very end
+  flat(110, HALF * 2, M(0xb7a273, 1), X1 - 55, 0, 0.04);
+
+  // walls with distance boards
+  const wallM = M(0xc9ccd1, 0.8);
+  for (const s of [1, -1]) {
+    box(X1 - X0, 1.0, 0.5, wallM, (X0 + X1) / 2, 0.5, s * (HALF + 0.25));
+    for (const [d, label] of [[DRAG.FT60, "60'"], [DRAG.FT330, "330'"], [DRAG.EIGHTH, '1/8'], [DRAG.FT1000, "1000'"], [DRAG.QUARTER, '1/4']]) {
+      const t = tex(128, 64, (c, w, h) => { c.fillStyle = '#ff5a1f'; c.fillRect(0, 0, w, h); c.fillStyle = '#111'; c.font = '900 44px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(label, w / 2, h / 2 + 2); });
+      const b = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ map: t, color: night ? 0xb0b0b0 : 0xffffff })); b.position.set(d, 1.9, s * (HALF + 0.3)); b.rotation.y = s > 0 ? Math.PI : 0; g.add(b);
+      box(0.12, 1.3, 0.12, M(0x2a2d33), d, 1.3, s * (HALF + 0.3));
+    }
+  }
+  box(0.6, 1.2, HALF * 2 + 1, wallM, X1 + 0.3, 0.6, 0); box(0.6, 1.2, HALF * 2 + 1, wallM, X0 - 0.3, 0.6, 0);
+
+  // Christmas tree: per lane — 2 pre-stage, 2 stage, 3 ambers, green, red
+  const tree = new THREE.Group(); tree.position.set(13, 0, 0); g.add(tree);
+  tree.add(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 4.2, 10), M(0x1b1c20, 0.5, 0.6))).position.y = 2.1;
+  const bulbs = [[], []], bulbG = new THREE.SphereGeometry(0.11, 14, 10), small = new THREE.SphereGeometry(0.06, 10, 8);
+  const COLS = { pre: 0xffd24a, stage: 0xffd24a, amber: 0xffa200, green: 0x2bff4a, red: 0xff2424 };
+  const rows = [['pre', 3.95], ['stage', 3.7], ['amber', 3.3], ['amber', 2.95], ['amber', 2.6], ['green', 2.2], ['red', 1.85]];
+  for (let lane = 0; lane < 2; lane++) {
+    const zs = lane ? 0.34 : -0.34; box(0.16, 2.5, 0.3, M(0x101114, 0.5), 13, 2.9, zs);
+    rows.forEach(([kind, y]) => {
+      const mat = new THREE.MeshBasicMaterial({ color: 0x1a1a1a }), set = [];
+      for (const dz of kind === 'pre' || kind === 'stage' ? [-0.07, 0.07] : [0]) { const b = new THREE.Mesh(kind === 'pre' || kind === 'stage' ? small : bulbG, mat); b.position.set(-0.11, y, zs + dz); tree.add(b); set.push(b); }
+      bulbs[lane].push({ kind, mat, on: new THREE.Color(COLS[kind]), off: new THREE.Color(COLS[kind]).multiplyScalar(0.08) });
+    });
+  }
+  const treeLight = new THREE.PointLight(0xffffff, 0, 30, 2); treeLight.position.set(11, 2.6, 0); g.add(treeLight);
+  /** st = { pre:[bool,bool], stage:[bool,bool], amber:[n,n] (0-3 lit, top down), green:[..], red:[..] } */
+  const setTree = st => {
+    let glow = 0, col = 0xffa200;
+    for (let lane = 0; lane < 2; lane++) { let ai = 0; for (const b of bulbs[lane]) {
+      const lit = b.kind === 'amber' ? (st.amberMask ? !!(st.amberMask[lane] & (1 << ai++)) : ai++ < st.amber[lane]) : !!st[b.kind][lane];
+      b.mat.color.copy(lit ? b.on : b.off); if (lit && b.kind !== 'pre' && b.kind !== 'stage') { glow = 1; col = b.on.getHex(); }
+    } }
+    treeLight.intensity = glow * (night ? 60 : 12); treeLight.color.set(col);
+  };
+  setTree({ pre: [0, 0], stage: [0, 0], amber: [0, 0], green: [0, 0], red: [0, 0] });
+
+  // finish-line scoreboards (one per lane)
+  const boards = [0, 1].map(lane => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 256; const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+    const draw = (et, spd, win) => { const x = c.getContext('2d'); x.fillStyle = '#060607'; x.fillRect(0, 0, 512, 256); x.strokeStyle = '#2a2d33'; x.lineWidth = 8; x.strokeRect(4, 4, 504, 248);
+      x.font = '900 104px "Courier New", monospace'; x.textAlign = 'right'; x.fillStyle = win ? '#2bff4a' : '#ffb300'; x.fillText(et, 480, 110); x.fillStyle = '#ff5a1f'; x.fillText(spd, 480, 224);
+      x.font = '700 26px Arial'; x.textAlign = 'left'; x.fillStyle = '#8a92a0'; x.fillText('E.T.', 26, 60); x.fillText('KM/H', 26, 176); t.needsUpdate = true; };
+    draw('-.---', '---', false);
+    const zs = (lane ? 1 : -1) * (HALF + 5);
+    box(0.5, 8, 0.5, M(0x1b1c20, 0.5, 0.6), DRAG.QUARTER + 45, 4, zs);
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(9, 4.5), new THREE.MeshBasicMaterial({ map: t })); b.position.set(DRAG.QUARTER + 44.6, 8, zs); b.rotation.y = -Math.PI / 2; g.add(b);
+    return draw;
+  });
+
+  // start-line tower, grandstands, pit building, light poles
+  const stand = M(0x8a8f98, 0.8), seat = M(0xb91c1c, 0.8), dark = M(0x23262b, 0.6), glass = M(0x0b1622, 0.2, 0.6);
+  for (const s of [1, -1]) {
+    for (let i = 0; i < 8; i++) box(190, 1.0, 2.0, i % 2 ? seat : stand, 105, 0.5 + i * 1.0, s * (HALF + 7 + i * 2.0));
+    box(192, 0.4, 18, M(0xd9dadd, 0.6), 105, 10.5, s * (HALF + 15));
+  }
+  box(9, 11, 7, M(0xe6e7ea, 0.7), -22, 5.5, -(HALF + 9)); box(9.4, 2.6, 7.4, glass, -22, 9.2, -(HALF + 9)); box(10, 0.5, 8, dark, -22, 11.2, -(HALF + 9));
+  const sign = tex(1024, 128, (c, w, h) => { c.fillStyle = '#0b0c0f'; c.fillRect(0, 0, w, h); c.fillStyle = '#ff5a1f'; c.fillRect(0, h - 10, w, 10); c.fillStyle = '#fff'; c.font = 'italic 900 84px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('APEX DRAGWAY', w / 2, h / 2 - 4); });
+  for (const sx of [1, -1]) { box(0.5, 9, 0.5, dark, -52, 4.5, sx * (HALF + 1)); }
+  box(1.2, 1.8, HALF * 2 + 3, dark, -52, 9, 0);
+  const sg = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2 + 2, 1.6), new THREE.MeshBasicMaterial({ map: sign })); sg.position.set(-52.62, 9, 0); sg.rotation.y = -Math.PI / 2; g.add(sg);
+  const sg2 = sg.clone(); sg2.position.x = -51.38; sg2.rotation.y = Math.PI / 2; g.add(sg2);
+  // floodlights
+  const poles = []; for (let x = -60; x <= 640; x += 70) for (const s of [1, -1]) poles.push([x, s]);
+  const poleM = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.22, 16, 8), M(0x2a2d33, 0.5, 0.7), poles.length), headM = new THREE.InstancedMesh(new THREE.BoxGeometry(1.4, 0.5, 2.6), new THREE.MeshBasicMaterial({ color: night ? 0xfff3d6 : 0x9a9da3 }), poles.length), dm = new THREE.Object3D();
+  poles.forEach(([x, s], i) => { dm.position.set(x, 8, s * (HALF + 3)); dm.updateMatrix(); poleM.setMatrixAt(i, dm.matrix); dm.position.set(x, 16.2, s * (HALF + 2.4)); dm.updateMatrix(); headM.setMatrixAt(i, dm.matrix); });
+  g.add(poleM, headM);
+  if (night) {
+    const poolT = tex(64, 64, (c, w) => { const gr = c.createRadialGradient(w / 2, w / 2, 2, w / 2, w / 2, w / 2); gr.addColorStop(0, 'rgba(255,240,210,0.42)'); gr.addColorStop(1, 'rgba(255,240,210,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, w); });
+    const pg = new THREE.PlaneGeometry(74, 30); pg.rotateX(-Math.PI / 2);
+    const pool = new THREE.InstancedMesh(pg, new THREE.MeshBasicMaterial({ map: poolT, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }), 11);
+    for (let i = 0; i < 11; i++) { dm.position.set(-60 + i * 70, 0.05, 0); dm.updateMatrix(); pool.setMatrixAt(i, dm.matrix); }
+    pool.renderOrder = 1; g.add(pool);
+  }
+  // surroundings
+  const grass = tex(256, 256, (c, w, h) => { c.fillStyle = night ? '#16261a' : '#3f6a2c'; c.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { c.fillStyle = night ? `rgba(${20 + Math.random() * 20},${40 + Math.random() * 30},${20 + Math.random() * 20},0.5)` : `rgba(${40 + Math.random() * 50},${90 + Math.random() * 70},${30 + Math.random() * 30},0.5)`; c.fillRect(Math.random() * w, Math.random() * h, 2, 3); } }, 200, 200);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200), new THREE.MeshStandardMaterial({ map: grass, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.position.set(500, -0.01, 0); ground.receiveShadow = true; g.add(ground);
+  flat(1300, 9, M(0x33353a, 0.9), 500, -(HALF + 46), 0.01);                    // return road
+  const spots = []; while (spots.length < 320) { const x = -300 + r() * 1700, z = (r() < 0.5 ? 1 : -1) * (60 + r() * 380); spots.push([x, z, 0.7 + r() * 0.9]); }
+  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.35, 0.5, 3, 6), M(0x4a3626, 0.9), spots.length), leaves = new THREE.InstancedMesh(new THREE.ConeGeometry(2.8, 8, 7), M(night ? 0x12261a : 0x244a1e, 0.9), spots.length), mt = new THREE.Matrix4();
+  spots.forEach(([x, z, sc], i) => { mt.makeScale(sc, sc, sc).setPosition(x, 1.5 * sc, z); trunks.setMatrixAt(i, mt); mt.makeScale(sc, sc, sc).setPosition(x, 6.5 * sc, z); leaves.setMatrixAt(i, mt); });
+  g.add(trunks, leaves);
+
+  const sunDir = night ? new THREE.Vector3(-0.3, 0.85, 0.3).normalize() : new THREE.Vector3(-0.4, 0.75, 0.4).normalize();
+  const dome = night ? skyDome('#03040a', '#141a33', '#0a0d0b') : skyDome('#3b78c7', '#bcd9ef', '#6f8f63', { dir: sunDir, size: 60, color: 0xfff6dd }); g.add(dome);
+  const hemi = night ? new THREE.HemisphereLight(0x8c9ad0, 0x20242a, 1.15) : new THREE.HemisphereLight(0xcfe3ff, 0x4a5a3a, 1.0);
+  const sun = new THREE.DirectionalLight(night ? 0xfff0d8 : 0xfff1dc, night ? 1.3 : 2.6); g.add(hemi, sun, sun.target);
+  const glow = night ? [0, 1, 2].map(i => { const m = new THREE.Mesh(new THREE.PlaneGeometry(26, 1.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff0d0).multiplyScalar(7), side: THREE.DoubleSide })); m.position.set(0, 11, (i - 1) * 7); m.rotation.x = Math.PI / 2; return m; }) : [];
+
+  let lane = 0;
+  const LIM = HALF - 0.95;
+  return {
+    name: night ? 'Apex Dragway · Night' : 'Apex Dragway', group: g, sun, sunDir, env: envFrom(renderer, dome, glow), fog: night ? new THREE.Fog(0x070a12, 160, 1300) : new THREE.Fog(0xbcd9ef, 400, 2200), night, hasLaps: false, drag: true,
+    setTree, showResult: (l, et, spd, win) => boards[l](et, spd, win), clearBoards: () => boards.forEach(b => b('-.---', '---', false)),
+    setLane(l) { lane = l ? 1 : 0; },
+    get spawn() { return { x: -7, z: (lane ? 1 : -1) * DRAG.LANE, psi: 0 }; },
+    reset() { },
+    surface(x, z) { const sand = x > X1 - 110; return { grip: sand ? 0.7 : x < 440 ? 1.12 : 1, drag: sand ? 2.6 : 0, off: sand ? 1 : 0, lap: false, line: false }; },
+    collide(x, z) {
+      if (Math.abs(z) <= LIM && x >= X0 + 2.4 && x <= X1 - 2.4) return null;
+      const cx = Math.max(X0 + 2.4, Math.min(X1 - 2.4, x)), cz = Math.max(-LIM, Math.min(LIM, z));
+      return { x: cx, z: cz, nx: x !== cx ? -Math.sign(x - cx) : 0, nz: z !== cz ? -Math.sign(z - cz) : 0 };
+    },
+    respawn() { return this.spawn; },
+  };
+}
+
 export const WORLDS = [
   { id: 'highway', name: 'Midnight Expressway', desc: 'A 6.5 km four-lane expressway loop with traffic, a bridge and tunnels. Score points by weaving through traffic.', build: buildHighway },
+  { id: 'drag', name: 'Apex Dragway', desc: 'Quarter-mile and eighth-mile drag strip with a Christmas tree, full timing and time boards. Day or night.', build: buildDrag },
   { id: 'circuit', name: 'Apex Raceway', desc: 'A 1.5 km race circuit with lap timing. Daylight.', build: buildCircuit },
   { id: 'city', name: 'Neon District', desc: 'Free-roam a city grid at night. Watch the buildings.', build: buildCity },
 ];

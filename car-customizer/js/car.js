@@ -6,6 +6,7 @@ import { buildKit } from './kit.js';
 import { buildWheel, buildStrut } from './wheels.js';
 import { buildEngine, buildExhaust } from './engine3d.js';
 import { resolve } from './stats.js';
+import { Chute } from './chute.js';
 import { disposeTree, clamp } from './geo.js';
 
 const DEG = Math.PI / 180;
@@ -48,6 +49,10 @@ export class Car {
     const tips = this.details.userData.tips;
     const cols = eng.collectors.map(c => c.clone().applyMatrix4(eng.group.matrix));
     const ex = buildExhaust(S, M, cols, tips, r.exhaust); ex.userData.solid = true; this.body.add(ex);
+
+    // drag parachute: pack on the body, canopy on the car root so it trails level behind
+    if (this.chute) { disposeTree(this.chute.group); this.root.remove(this.chute.group); }
+    this.chute = new Chute(S, build); this.body.add(this.chute.pack); this.root.add(this.chute.group);
 
     // exhaust flames
     const fg = new THREE.ConeGeometry(this.details.userData.tipRadius * 1.15, 0.5, 12, 1, true); fg.rotateZ(Math.PI / 2); fg.translate(-0.25, 0, 0);

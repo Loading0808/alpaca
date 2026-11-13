@@ -1,4 +1,5 @@
 // Performance model + build-sheet pricing.
+import { PARACHUTES } from './data.js';
 import { CARS, ENGINES, TURBOS, SUPERCHARGERS, EXHAUSTS, INTAKES, KITS, SPOILERS, HOODS, ROOFS, TINTS, FINISHES, RIMS, TIRES, SUSPENSIONS, byId, defaultBuild } from './data.js';
 
 export function resolve(build) {
@@ -23,7 +24,7 @@ export function computeStats(build) {
   const hp = e.hp * fi * breath;
   const tq = e.tq * (1 + (fi - 1) * 1.05) * (1 + (breath - 1) * 0.7);
   const weight = car.weight + (e.weight - stockE.weight) + r.turbo.weight + r.sc.weight + r.exhaust.weight + r.intake.weight
-    + r.kit.weight + r.spoiler.weight + r.hood.weight + r.roof.weight + r.rim.weight + r.tire.weight + r.susp.weight;
+    + (build.chute ? byId(PARACHUTES, build.chute.type).weight : 0) + r.kit.weight + r.spoiler.weight + r.hood.weight + r.roof.weight + r.rim.weight + r.tire.weight + r.susp.weight;
   const down = (r.kit.down || 0) + (r.spoiler.down || 0), drag = (r.kit.drag || 0) + (r.spoiler.drag || 0);
   const traction = ({ AWD: 1.08, RWD: 1.5, FWD: 1.72 }[car.drive]) / Math.pow(r.tire.grip * (r.tire.launch || 1), 0.6);
   const t100 = Math.max(1.75, 1.15 * Math.pow(weight / hp, 0.75) * traction);

@@ -6,7 +6,7 @@ const SEND_HZ = 15;
 export class Net {
   constructor() {
     this.ws = null; this.id = 0; this.room = null; this.players = new Map(); this.board = { rows: [], top: [] };
-    this.top = []; this.offset = 0; this.rtt = 0; this.bestRtt = 1e9; this.lastSend = 0; this.on = {};
+    this.top = []; this.topDrag = { quarter: [], eighth: [] }; this.dragWaiting = { quarter: 0, eighth: 0 }; this.offset = 0; this.rtt = 0; this.bestRtt = 1e9; this.lastSend = 0; this.on = {};
   }
   get connected() { return !!this.ws && this.ws.readyState === 1; }
   get inRoom() { return this.connected && !!this.room; }
@@ -36,6 +36,11 @@ export class Net {
   join(roomId, build, name) { this.send({ t: 'join', room: roomId, build, name }); }
   joinCode(code, build, name) { this.send({ t: 'join', code, build, name }); }
   create(build, name) { this.send({ t: 'create', build, name }); }
+  // drag racing
+  dragMatch(dist, tree, build, name) { this.send({ t: 'dragmatch', dist, tree, build, name }); }
+  createDrag(dist, tree, build, name) { this.send({ t: 'create', mode: 'drag', dist, tree, build, name }); }
+  dragStage(v) { this.send({ t: 'dr', ev: 'stage', v }); }
+  dragResult(r) { this.send({ t: 'dr', ev: 'result', rt: r.rt, et: r.et, trap: r.trap }); }
   leave() { this.send({ t: 'leave' }); this.room = null; this.players.clear(); }
   chat(text) { this.send({ t: 'chat', m: text }); }
   bank(total) { this.send({ t: 'bank', total }); }
@@ -50,9 +55,9 @@ export class Net {
   _handle(m) {
     switch (m.t) {
       case 'pong': { const rtt = Date.now() - m.c; this.rtt = rtt; if (rtt <= this.bestRtt + 5) { this.bestRtt = Math.min(this.bestRtt, rtt); this.offset = m.time + rtt / 2 - Date.now(); } break; }
-      case 'welcome': case 'lobbies': if (m.top) this.top = m.top; this.emit('lobbies', m.lobbies || m.list); break;
+      case 'welcome': case 'lobbies': if (m.top) this.top = m.top; if (m.topDrag) this.topDrag = m.topDrag; this.dragWaiting = m.dragWaiting || this.dragWaiting; this.emit('lobbies', m.lobbies || m.list); break;
       case 'joined':
-        this.room = m.room; this.seed = m.seed; this.name = m.name; this.players.clear();
+        this.room = m.room; this.seed = m.seed; this.name = m.name; this.lane = m.lane || 0; this.players.clear();
         for (const p of m.players) if (p.id !== m.you) this.players.set(p.id, { ...p, snaps: [] });
         this.emit('joined', m); break;
       case 'in': this.players.set(m.p.id, { ...m.p, snaps: [] }); this.emit('in', m.p); break;
@@ -62,6 +67,10 @@ export class Net {
         break;
       case 'board': this.board = m; if (m.top) this.top = m.top; this.emit('board', m); break;
       case 'chat': this.emit('chat', m); break;
+      case 'dr_go': this.emit('dragGo', m); break;
+      case 'dr_stage': { const p = this.players.get(m.id); if (p) p.staged = m.v; break; }
+      case 'dr_wait': this.emit('dragWait'); break;
+      case 'dr_result': if (m.top) this.topDrag = m.top; this.emit('dragResult', m); break;
       case 'sys': this.emit('sys', m.m); break;
       case 'err': this.emit('error', m.m); break;
     }

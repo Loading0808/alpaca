@@ -43,7 +43,17 @@ export const Records = {
     save(d);
     return { rank: list.indexOf(row) + 1, pb: score > prev };
   },
-  clear(world) { const d = load(); if (d.boards) delete d.boards[world]; save(d); },
+  clear(world) { const d = load(); if (d.boards) delete d.boards[world]; if (d.times) delete d.times[world]; save(d); },
+  // ---- drag racing: time boards (lowest elapsed time first)
+  times(board) { return (load().times?.[board] || []).slice().sort((a, b) => a.et - b.et); },
+  bestTime(board, name = Records.name()) { const l = (load().times?.[board] || []).filter(r => r.name === name).map(r => r.et); return l.length ? Math.min(...l) : 0; },
+  /** Store a clean run. row = { et, rt, trap, car }. Returns { rank, pb }. */
+  submitTime(board, row) {
+    const d = load(), name = d.name || 'Player 1'; d.times = d.times || {};
+    const list = d.times[board] = d.times[board] || [], prev = list.filter(r => r.name === name).map(r => r.et), pb = !prev.length || row.et < Math.min(...prev);
+    const rec = { name, ...row, ts: Date.now() }; list.push(rec); list.sort((a, b) => a.et - b.et); list.length = Math.min(list.length, 10); save(d);
+    return { rank: list.indexOf(rec) + 1, pb };
+  },
 };
 
 export class Score {

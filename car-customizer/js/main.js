@@ -1,6 +1,7 @@
 // APEX GARAGE — application entry point.
 import * as THREE from 'three';
-import { CARS, SUSPENSIONS, AIR_PRESETS, airPresetHeight, slamHeight, defaultAir, byId, defaultBuild } from './data.js';
+import { CARS, SUSPENSIONS, AIR_PRESETS, airPresetHeight, slamHeight, defaultAir, byId, defaultBuild, defaultSetup } from './data.js';
+import { DRAG_DISTANCES, TREES } from './drag.js';
 import { createStage } from './scene.js';
 import { createMaterials, applyAppearance } from './materials.js';
 import { Car } from './car.js';
@@ -108,6 +109,13 @@ app.toggle = name => {
   ui.refresh(false);
 };
 
+// ---- drag setup, saved per car (launch control, gearing, tyre pressures, boost)
+app.setup = () => { const all = (prefs.setup = prefs.setup || {}), su = all[app.build.carId]; return { ...defaultSetup(), ...su, gears: (su && su.gears ? su.gears : defaultSetup().gears).slice() }; };
+app.setSetup = patch => { const su = { ...app.setup(), ...patch }; prefs.setup[app.build.carId] = su; savePrefs(); drive.setSetup(su); return su; };
+app.resetSetup = keys => { const d = defaultSetup(), patch = {}; for (const k of keys) patch[k] = Array.isArray(d[k]) ? d[k].slice() : d[k]; return app.setSetup(patch); };
+/** Garage preview of the parachute, fully open behind the car. */
+app.previewChute = on => { app.chutePreview = !!on; if (!on) car.chute.update(0, 0, 0, false); };
+
 // ---- air suspension presets (work in the garage and while driving)
 const airStore = () => (prefs.air = prefs.air || {});
 const hiss = up => { if (audio.ensure()) audio._burst({ dur: up ? 0.7 : 1.0, f0: up ? 2400 : 5200, f1: up ? 4400 : 1200, q: 0.9, gain: 0.15 }); };
@@ -166,7 +174,9 @@ app.renameSave = (id, name) => { const list = readSaves(), s = list.find(x => x.
 // ---- drive mode
 const keys = {};
 const net = new Net(), remotes = new RemoteCars(net);
-const hud = { air: $('hudAir'), mp: $('hudMp'), root: $('driveHud'), speed: $('hudSpeed'), gear: $('hudGear'), lap: $('hudLap'), last: $('hudLast'), best: $('hudBest'), laps: $('hudLaps'), place: $('hudPlace'),
+const dragPrefs = () => (prefs.drag = { dist: 'quarter', tree: 'sportsman', night: false, ...(prefs.drag || {}) });
+const hud = { drag: $('hudDrag'), tree: [...$('hudTree').children], dClock: $('hudDragClock'), dState: $('hudDragState'), dDist: $('hudDragDist'), slip: $('hudSlip'), chuteBtn: $('hudChute'),
+  aid: { abs: $('aidABS'), tcs: $('aidTCS'), esp: $('aidESP'), lc: $('aidLC'), chute: $('aidCHUTE') }, air: $('hudAir'), mp: $('hudMp'), root: $('driveHud'), speed: $('hudSpeed'), gear: $('hudGear'), lap: $('hudLap'), last: $('hudLast'), best: $('hudBest'), laps: $('hudLaps'), place: $('hudPlace'),
   score: $('hudScore'), mult: $('hudMult'), bar: $('hudComboBar'), drift: $('hudDrift'), pb: $('hudPb'), feed: $('hudFeed'), trans: $('hudTrans'), gearBox: $('hudGearBox') };
 const fmtLap = t => t ? `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}` : '—:——.——';
 const num = v => Math.round(v).toLocaleString('en-US');
@@ -183,6 +193,17 @@ function renderDriveMenu() {
   }));
   trans.replaceChildren(...TRANSMISSIONS.map(t => { const b = el('button', 'chip' + (drive.trans === t.id ? ' on' : ''), t.name); b.title = t.desc; b.onclick = () => { app.setTransmission(t.id); renderDriveMenu(); }; return b; }));
   $('dmTransDesc').textContent = TRANSMISSIONS.find(t => t.id === drive.trans).desc;
+  // drag strip options
+  const dp = dragPrefs(), chip = (label, on, fn, title) => { const b = el('button', 'chip' + (on ? ' on' : ''), label); if (title) b.title = title; b.onclick = () => { fn(); savePrefs(); renderDriveMenu(); }; return b; };
+  $('dmDrag').hidden = false;
+  $('dmDragDist').replaceChildren(...DRAG_DISTANCES.map(d => chip(d.name, dp.dist === d.id, () => { dp.dist = d.id; })));
+  $('dmDragTree').replaceChildren(...TREES.map(t => chip(t.name, dp.tree === t.id, () => { dp.tree = t.id; }, t.desc)));
+  $('dmDragTime').replaceChildren(chip('Day', !dp.night, () => { dp.night = false; }), chip('Night', dp.night, () => { dp.night = true; }));
+  // driver aids: the mode's defaults unless you have switched one yourself
+  const AS = drive.assists(), ov = drive.assistOverride;
+  $('dmAids').replaceChildren(...[['abs', 'ABS'], ['tcs', 'TCS'], ['esp', 'ESP']].map(([k, n]) => chip(`${n} ${AS[k] ? 'on' : 'off'}${k in ov ? ' (manual)' : ''}`, AS[k], () => { app.toggleAssist(k); })),
+    ...(Object.keys(ov).length ? [chip('Use mode defaults', false, () => { drive.clearAssistOverrides(); prefs.assists = {}; })] : []));
+  $('dmAidsNote').textContent = 'Each driving mode sets these. Switch one yourself (or press Z / X / V while driving) and your choice is kept when you change mode.';
   $('dmModes').replaceChildren(...DRIVE_MODES.map(m => { const b = el('button', 'chip' + (drive.mode.id === m.id ? ' on' : ''), m.name); b.title = m.desc; b.onclick = () => { app.setMode(m.id); renderDriveMenu(); }; return b; }));
   $('dmModeDesc').textContent = DRIVE_MODES.find(m => m.id === drive.mode.id).desc;
   const CUSTOM = [['steer', 'Steering response'], ['thr', 'Throttle response'], ['tc', 'Traction control'], ['esc', 'Stability control'], ['stiff', 'Suspension stiffness'], ['brake', 'Brake strength'], ['drift', 'Drift assist']];
@@ -192,9 +213,19 @@ function renderDriveMenu() {
     inp.oninput = () => { out.textContent = inp.value + '%'; drive.setCustom({ [k]: +inp.value }); prefs.custom = { ...drive.custom }; savePrefs(); };
     wrap.append(top, inp); return wrap;
   })));
-  tabs.replaceChildren(...WORLDS.map(w => { const b = el('button', 'chip' + (boardWorld === w.id ? ' on' : ''), w.name); b.onclick = () => { boardWorld = w.id; renderDriveMenu(); }; return b; }));
+  tabs.replaceChildren(...WORLDS.filter(w => w.id !== 'drag').map(w => { const b = el('button', 'chip' + (boardWorld === w.id ? ' on' : ''), w.name); b.onclick = () => { boardWorld = w.id; renderDriveMenu(); }; return b; }));
+  for (const d of DRAG_DISTANCES) { const b = el('button', 'chip' + (boardWorld === d.board ? ' on' : ''), 'Drag ' + d.name); b.onclick = () => { boardWorld = d.board; renderDriveMenu(); }; tabs.append(b); }
+  { const b = el('button', 'chip' + (boardWorld === 'online-drag' ? ' on' : ''), 'Online drag'); b.title = 'Best server-verified multiplayer drag runs'; b.onclick = () => { boardWorld = 'online-drag'; renderDriveMenu(); }; tabs.append(b); }
   { const b = el('button', 'chip' + (boardWorld === 'online' ? ' on' : ''), 'Online'); b.title = 'All-time best multiplayer runs on this server'; b.onclick = () => { boardWorld = 'online'; renderDriveMenu(); }; tabs.append(b); }
-  const me = Records.name(), online = boardWorld === 'online';
+  const me = Records.name(), online = boardWorld === 'online' || boardWorld === 'online-drag', timeBoard = boardWorld.startsWith('drag-') || boardWorld === 'online-drag';
+  $('dmBoardHead').replaceChildren(...(timeBoard ? ['#', 'Driver', 'Car', 'E.T.', 'RT', 'km/h'] : ['#', 'Driver', 'Car', 'Score']).map(t => el('th', '', t)));
+  if (timeBoard) {
+    const carName = id => (CARS.find(c => c.id === id) || { name: id }).name;
+    const list = boardWorld === 'online-drag' ? [...((net.topDrag || {})[dp.dist] || [])].map(r => ({ ...r, car: carName(r.car) })) : Records.times(boardWorld);
+    board.replaceChildren(...list.map((r, i) => { const tr = el('tr', r.name === me ? 'me' : ''); tr.append(el('td', '', String(i + 1)), el('td', '', r.name), el('td', '', r.car), el('td', '', r.et.toFixed(3)), el('td', '', r.rt != null ? r.rt.toFixed(3) : '—'), el('td', '', String(Math.round(r.trap)))); return tr; }));
+    if (!list.length) { const tr = el('tr', 'empty'), td = el('td', '', boardWorld === 'online-drag' ? (net.connected ? `No verified ${dp.dist === 'eighth' ? '1/8' : '1/4'} mile runs on this server yet.` : 'Connect to a multiplayer server to see its drag board.') : 'No clean runs yet — red lights do not count.'); td.colSpan = 6; tr.append(td); board.append(tr); }
+    $('dmClear').hidden = boardWorld === 'online-drag'; $('dmName').value = me; return;
+  }
   const rows = online ? (net.top || []).map(r => ({ name: r.name, score: r.score, car: (CARS.find(c => c.id === r.car) || { name: r.car }).name })) : Records.board(boardWorld);
   board.replaceChildren(...rows.map((r, i) => {
     const tr = el('tr', r.target ? 'target' : r.name === me ? 'me' : '');
@@ -206,13 +237,17 @@ function renderDriveMenu() {
 }
 app.setTransmission = id => { drive.setTransmission(id); prefs.trans = drive.trans; savePrefs(); hud.trans.textContent = TRANSMISSIONS.find(t => t.id === drive.trans).name; };
 app.setMode = id => { const m = drive.setMode(id); prefs.mode = m.id; savePrefs(); return m; };
+app.toggleAssist = k => { const on = drive.toggleAssist(k); prefs.assists = { ...drive.assistOverride }; savePrefs(); return on; };
+drive.assistOverride = { ...(prefs.assists || {}) };
+$('dmDragGo').addEventListener('click', () => app.drive('drag'));
 app.openDriveMenu = () => { renderDriveMenu(); $('driveMenu').classList.add('show'); if (!net.connected && location.protocol !== 'file:') mpConnect(true); else if (net.connected) net.lobbies(); };
 
 // ---- multiplayer (real connections to server.js; see net.js)
 const mpStatus = t => { $('mpStatus').textContent = t; };
 const myBuild = () => JSON.parse(JSON.stringify(app.build));
 function renderLobbies(list) {
-  $('mpPrivate').hidden = false;
+  $('mpPrivate').hidden = false; $('mpDrag').hidden = false;
+  { const dp = dragPrefs(), w = (net.dragWaiting || {})[dp.dist] || 0; $('mpDragInfo').textContent = `${dp.dist === 'eighth' ? '1/8' : '1/4'} mile · ${w ? w + ' driver' + (w > 1 ? 's' : '') + ' waiting' : 'no one waiting — you will be first in line'}`; }
   $('mpLobbies').replaceChildren(...(list || []).map(l => {
     const row = el('div', 'lobby'), b = el('button', 'btn', l.players >= l.max ? 'Full' : 'Join'); b.disabled = l.players >= l.max;
     b.onclick = () => net.join(l.id, myBuild(), Records.name());
@@ -227,6 +262,8 @@ async function mpConnect(quiet) {
 $('mpUrl').value = prefs.mpUrl || '';
 $('mpConnect').addEventListener('click', () => mpConnect(false));
 $('mpCreate').addEventListener('click', () => net.create(myBuild(), Records.name()));
+$('mpDragFind').addEventListener('click', () => { const dp = dragPrefs(); net.dragMatch(dp.dist, dp.tree, myBuild(), Records.name()); });
+$('mpDragCreate').addEventListener('click', () => { const dp = dragPrefs(); net.createDrag(dp.dist, dp.tree, myBuild(), Records.name()); });
 $('mpJoinCode').addEventListener('click', () => { const c = $('mpCode').value.trim(); if (c.length === 6) net.joinCode(c, myBuild(), Records.name()); else mpStatus('Room codes are six characters.'); });
 const chatLine = (name, text, sys) => { const d = el('div', sys ? 'sys' : ''); if (name) d.append(el('b', '', name + ': ')); d.append(text); $('mpChat').append(d); while ($('mpChat').children.length > 6) $('mpChat').firstChild.remove(); };
 function renderPlayers() {
@@ -236,12 +273,29 @@ function renderPlayers() {
 net.on.lobbies = l => { renderLobbies(l); if (boardWorld === 'online' && $('driveMenu').classList.contains('show')) renderDriveMenu(); };
 net.on.error = m => { mpStatus(m); if (app.driving) feed(m, 0, 'bad'); };
 net.on.joined = m => {
-  app.drive('highway', { net });
+  drive.dragCompare = null;
+  if (m.room.mode === 'drag') app.drive('drag', { net, lane: m.lane, dist: m.room.dist, night: dragPrefs().night });
+  else app.drive('highway', { net });
   remotes.clear(); for (const p of net.players.values()) remotes.add(p);
   hud.mp.hidden = false; $('mpChat').replaceChildren(); $('mpRoomName').textContent = m.room.name; $('mpRoomCode').textContent = m.room.private ? m.room.code : `${m.players.length} / ${m.room.max}`;
   chatLine('', m.room.private ? `Private room. Share code ${m.room.code} with friends.` : `Joined ${m.room.name}.`, true);
+  if (m.room.mode === 'drag') chatLine('', m.players.length < 2 ? 'Waiting for an opponent. You can make practice runs meanwhile: stage and the tree will start.' : 'Opponent found. Stage when ready — the tree starts when you are both in the beams.', true);
 };
-net.on.in = p => { remotes.add(p); };
+net.on.in = p => { remotes.add(p); if (net.room && net.room.mode === 'drag') { chatLine('', `${p.name} is in the other lane. Stage when ready.`, true); drive.respawn(); } };
+// drag racing online: the server starts the tree and decides the winner
+drive.onDragStage = v => { if (net.inRoom && net.room.mode === 'drag') net.dragStage(v); };
+drive.onDragResult = res => { if (net.inRoom && net.room.mode === 'drag') net.dragResult(res); };
+net.on.dragGo = m => { if (drive.race) { drive.dragCompare = null; drive.race.go((m.green - net.serverNow()) / 1000, m.tree); } };
+net.on.dragWait = () => { if (drive.race && drive.race.state === 'staging') drive.race.sentStage = false; };
+net.on.dragResult = m => {
+  drive.dragCompare = m;
+  const me = m.rows.find(r => r.id === net.id), other = m.rows.find(r => r.id !== net.id);
+  if (other && !other.rejected && !other.dnf && drive.world.showResult) drive.world.showResult(1 - net.lane, other.et.toFixed(3), String(other.trap), m.winner === other.id);
+  if (me && !me.rejected && !me.dnf && drive.world.showResult) drive.world.showResult(net.lane, me.et.toFixed(3), String(me.trap), m.winner === net.id);
+  feed(!other ? 'Solo run recorded' : m.winner === net.id ? `You win${other.foul ? ' — opponent red-lit' : ''}!` : m.winner ? `${other.name} wins${me && me.foul ? ' — you red-lit' : ''}` : 'No winner', 0, m.winner === net.id || !other ? 'good' : 'bad');
+  if (other && me && !me.foul && !other.foul && !other.dnf && !other.rejected && !me.rejected) chatLine('', `Reaction: you ${me.rt.toFixed(3)} s, ${other.name} ${other.rt.toFixed(3)} s${me.et > other.et && m.winner === net.id ? ' — holeshot win!' : ''}`, true);
+  chatLine('', 'Press R to return to the line for another race.', true);
+};
 net.on.out = p => { remotes.remove(p.id); };
 net.on.board = () => { renderPlayers(); if (net.room && !net.room.private) $('mpRoomCode').textContent = `${net.board.rows.length} / ${net.room.max}`; };
 net.on.chat = m => chatLine(m.name, m.m);
@@ -258,6 +312,21 @@ chatInput.addEventListener('focus', () => { for (const k in keys) keys[k] = fals
 $('dmName').addEventListener('change', e => { Records.setName(e.target.value); renderDriveMenu(); });
 $('dmClear').addEventListener('click', () => { if (confirm('Clear all saved scores for this map?')) { Records.clear(boardWorld); renderDriveMenu(); } });
 
+const fmtT = v => (v == null ? '—' : v.toFixed(3));
+let slipKey = '';
+function renderDragHud(g) {
+  const L = g.lights, on = [L.pre, L.stage, L.amber >= 1, L.amber >= 2, L.amber >= 3, L.green, L.red];
+  hud.tree.forEach((n, i) => n.classList.toggle('on', !!on[i]));
+  hud.dClock.textContent = fmtT(g.clock); hud.dDist.textContent = g.dist.name;
+  hud.dState.textContent = g.state === 'staging' ? (L.stage ? 'Staged — hold still' : L.pre ? 'Pre-staged — creep forward' : 'Roll up to the line') : g.state === 'tree' ? 'Watch the tree' : g.state === 'run' ? (L.red ? 'Red light' : `RT ${fmtT(g.rt)}`) : 'Run complete — R to go again';
+  const key = Object.keys(g.splits).length + g.state + (drive.dragCompare ? 'c' : '');
+  if (key === slipKey) return; slipKey = key;
+  const rows = [['60 ft', 'ft60'], ['330 ft', 'ft330'], ['1/8 mile', 'eighth'], ['1000 ft', 'ft1000'], ['1/4 mile', 'quarter']].filter(([, k]) => g.splits[k] != null);
+  hud.slip.replaceChildren(...rows.map(([n, k]) => { const tr = el('tr'); tr.append(el('td', '', n), el('td', '', fmtT(g.splits[k])), el('td', '', k === 'eighth' || k === 'quarter' ? Math.round(g.speeds[k]) + ' km/h' : '')); return tr; }));
+  const c = drive.dragCompare;
+  if (c) { const h = el('tr', 'head'); h.append(el('td', '', 'Driver'), el('td', '', 'RT / ET'), el('td', '', '')); hud.slip.append(h);
+    for (const r of c.rows) { const tr = el('tr', r.id === c.winner ? 'win' : 'lose'); tr.append(el('td', '', r.name), el('td', '', r.rejected ? 'NOT VERIFIED' : r.dnf ? 'DID NOT FINISH' : r.foul ? 'RED LIGHT' : `${fmtT(r.rt)} / ${fmtT(r.et)}`), el('td', '', r.id === c.winner ? 'WIN' : '')); hud.slip.append(tr); } }
+}
 const feed = (label, pts, kind) => {
   const d = el('div', 'feed-item ' + kind); d.append(el('span', '', label)); if (pts) d.append(el('b', '', '+' + num(pts)));
   hud.feed.prepend(d); while (hud.feed.children.length > 4) hud.feed.lastChild.remove();
@@ -271,7 +340,10 @@ app.drive = (id, opts = {}) => {
   if (app.toggles.xray) app.toggle('xray');
   if (app.toggles.turntable) app.toggle('turntable');
   if (!opts.net && net.inRoom) net.leave();
-  const world = drive.enter(id, stats, car.r, opts);
+  app.previewChute(false); drive.setSetup(app.setup());
+  if (id === 'drag') opts = { ...dragPrefs(), ...opts };
+  const world = drive.enter(id, stats, car.r, { ...opts, chute: app.build.chute });
+  document.body.classList.toggle('dragging', id === 'drag'); hud.drag.hidden = id !== 'drag'; hud.slip.replaceChildren(); hud.chuteBtn.hidden = drive.chute.state === 'none';
   if (opts.net) world.group.add(remotes.group); else { remotes.clear(); hud.mp.hidden = true; }
   prefs.world = world.id; if (boardWorld !== 'online') boardWorld = world.id; savePrefs();
   app.driving = true; document.body.classList.add('driving');
@@ -284,7 +356,7 @@ app.drive = (id, opts = {}) => {
 };
 app.exitDrive = () => {
   if (!app.driving) return;
-  const res = drive.exit(); app.driving = false;
+  const res = drive.exit(); app.driving = false; document.body.classList.remove('dragging');
   if (net.inRoom) net.leave(); remotes.clear(); remotes.group.removeFromParent(); hud.mp.hidden = true; document.body.classList.remove('driving');
   for (const k in keys) keys[k] = false;
   eng.throttle = 0; eng.input = 0; eng.rpm = car.r.engine.idle;
@@ -348,6 +420,7 @@ $('vol').addEventListener('input', e => audio.setVolume(+e.target.value));
 $('btnSave').addEventListener('click', app.save); $('btnLoad').addEventListener('click', () => ui.setCategory('garage'));
 $('btnDrive').addEventListener('click', () => app.openDriveMenu());
 $('driveClose').addEventListener('click', () => $('driveMenu').classList.remove('show'));
+$('hudChute').addEventListener('click', () => feed(drive.toggleChute(), 0, 'minor'));
 $('hudExit').addEventListener('click', () => app.exitDrive()); $('hudReset').addEventListener('click', () => drive.respawn()); $('hudCam').addEventListener('click', () => drive.nextCamera());
 $('btnReset').addEventListener('click', app.reset); $('btnShot').addEventListener('click', app.shot);
 window.addEventListener('keydown', e => {
@@ -358,6 +431,9 @@ window.addEventListener('keydown', e => {
     if (e.repeat) return;
     if (e.code === 'Escape') app.exitDrive(); else if (e.code === 'KeyR') drive.respawn(); else if (e.code === 'KeyC') drive.nextCamera(); else if (e.code === 'KeyL') app.toggle('lights');
     else if (e.code === 'KeyE') drive.shift(1, !!keys.ShiftLeft); else if (e.code === 'KeyQ') drive.shift(-1, !!keys.ShiftLeft);
+    else if (e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'KeyV') { const k = { KeyZ: 'abs', KeyX: 'tcs', KeyV: 'esp' }[e.code], on = app.toggleAssist(k); feed(`${k.toUpperCase()} ${on ? 'on' : 'off'}`, 0, on ? 'minor' : 'bad'); }
+    else if (e.code === 'KeyG') { const su = app.setSetup({ lc: !app.setup().lc }); feed(su.lc ? `Launch control armed at ${su.lcRpm} rpm — hold brake or handbrake, floor it, release` : 'Launch control off', 0, 'minor'); }
+    else if (e.code === 'KeyP') feed(drive.toggleChute(), 0, 'minor');
     else if (e.code === 'KeyM') { const i = DRIVE_MODES.findIndex(m => m.id === drive.mode.id), m = app.setMode(DRIVE_MODES[(i + 1) % DRIVE_MODES.length].id); feed(`${m.name} mode`, 0, 'minor'); }
     else if (/^Digit[1-4]$/.test(e.code)) { const p = app.setAirPreset(AIR_PRESETS[+e.code.slice(5) - 1].id); feed(p ? `Air suspension: ${p.name}` : 'This car has no air suspension — fit it in the Stance panel', 0, 'minor'); }
     else if (e.code === 'Enter' && net.inRoom) { e.preventDefault(); keys.Enter = false; chatInput.focus(); }
@@ -383,7 +459,7 @@ requestAnimationFrame(() => $('loader').classList.add('hide'));
 
 const clock = new THREE.Clock();
 function frame() {
-  const dt = Math.min(0.1, clock.getDelta());
+  const dt = Math.min(0.25, clock.getDelta());                 // game time tracks real time down to 4 fps (race clocks depend on it)
   // suspension glides to its target height (air presets, sliders, Show mode lifting off the ground)
   const tgt = rideTarget(app.driving ? Math.abs(drive.s.vx) : 0), stepH = dt * 0.075;
   if (Math.abs(tgt.f - ride.f) > 1e-4 || Math.abs(tgt.r - ride.r) > 1e-4) {
@@ -403,10 +479,19 @@ function frame() {
     car.update(dt, eng.rpm, 0, true, false, stats.redline);
     hud.speed.textContent = Math.round(d.kmh); hud.gear.textContent = d.gear;
     hud.trans.textContent = `${TRANSMISSIONS.find(t => t.id === d.trans).name} · ${d.mode}`;
+    // driver-aid lamps: green = on, struck through = off, yellow = working right now
+    for (const k of ['abs', 'tcs', 'esp']) hud.aid[k].className = d.active[k] ? 'act' : d.assists[k] ? 'on' : 'off';
+    if (!d.assists.abs && d.locked) hud.aid.abs.className = 'warn';
+    hud.aid.lc.className = d.lcHold ? 'act' : d.lc ? 'on' : 'na';
+    hud.aid.chute.className = d.chute === 'none' ? 'na' : d.chute === 'open' ? 'warn' : d.chute === 'repack' ? 'act' : 'on';
+    hud.aid.chute.textContent = d.chute === 'open' ? 'CHUTE OUT' : d.chute === 'repack' ? 'REPACKING' : 'CHUTE';
+    stats.boostPsi = d.boostPsi;
+    if (d.drag) renderDragHud(d.drag);
     if (air) { const i = app.rideInfo(); hud.air.textContent = `Air: ${air.preset === 'custom' ? 'Custom' : byId(AIR_PRESETS, air.preset).name} · ${i.f} / ${i.r} mm${d.scrape > 0.3 ? ' · scraping' : ''}`; } else hud.air.textContent = '';
     if (net.inRoom) {
       drive.justReset = Math.max(0, (drive.justReset || 0) - dt);
-      net.sendState(drive.s, d.rpm, d.score, ((keys.KeyS || keys.ArrowDown) ? 1 : 0) | 2 | (drive.justReset > 0 ? 4 : 0));
+      net.sendState(drive.s, d.rpm, d.score, ((keys.KeyS || keys.ArrowDown) ? 1 : 0) | 2 | (drive.justReset > 0 ? 4 : 0) | (d.chute === 'open' ? 8 : 0));
+      if (drive.race) for (const p of net.players.values()) { const sm = net.sample(p); if (sm) { const f = sm.x + 2.2; drive.race.other.pre = f >= -0.18 && f < 0.9; drive.race.other.staged = !!p.staged; } }
       remotes.update(dt);
     }
     hud.gearBox.classList.toggle('shift', d.shiftUp); hud.gearBox.classList.toggle('clutch', !!d.clutch);
@@ -417,6 +502,7 @@ function frame() {
   } else {
     stepEngine(dt);
     car.update(dt, eng.rpm, eng.throttle, eng.running, app.toggles.dyno, stats.redline);
+    if (app.chutePreview) car.chute.update(dt, 1, 30, true);
   }
   ui.drawTach(eng.rpm, eng.running, eng.boost, stats);
   stage.update(dt);

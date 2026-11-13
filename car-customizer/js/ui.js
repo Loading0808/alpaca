@@ -4,7 +4,7 @@ import {
   PAINT_COLORS, FINISHES, RIMS, RIM_COLORS, CALIPER_COLORS, TIRES, SUSPENSIONS, byId,
 } from './data.js';
 import { maxDrop, maxRim } from './stats.js';
-import { AIR_PRESETS, AIR_LIFT, slamHeight } from './data.js';
+import { AIR_PRESETS, AIR_LIFT, slamHeight, PARACHUTES, CHUTE_DESIGNS, LAUNCH_STYLES, GEAR_DEFAULT, ENGINE_LIMIT, pressureEffect } from './data.js';
 
 const $ = id => document.getElementById(id);
 const money = v => '$' + Math.round(v).toLocaleString('en-US');
@@ -24,7 +24,7 @@ function h(tag, attrs = {}, ...kids) {
 
 const CATS = [
   ['car', 'Vehicle'], ['paint', 'Paint'], ['body', 'Body Kit'], ['wheels', 'Wheels'], ['tires', 'Tyres'], ['susp', 'Stance'],
-  ['engine', 'Engine'], ['boost', 'Boost'], ['exhaust', 'Exhaust'], ['intake', 'Intake'], ['sheet', 'Build Sheet'], ['garage', 'My Cars'],
+  ['engine', 'Engine'], ['boost', 'Boost'], ['exhaust', 'Exhaust'], ['intake', 'Intake'], ['dragsetup', 'Drag Setup'], ['sheet', 'Build Sheet'], ['garage', 'My Cars'],
 ];
 const VIEWS = [['q', '3/4'], ['front', 'Front'], ['side', 'Side'], ['rear', 'Rear'], ['top', 'Top'], ['wheel', 'Wheel'], ['engine', 'Engine']];
 const TOGGLES = [['xray', 'X-Ray'], ['lights', 'Lights'], ['turntable', 'Turntable'], ['dyno', 'Dyno']];
@@ -159,6 +159,65 @@ export function initUI(app) {
         [i.gain ? [`Power ${pct(i.gain)}`, 'up'] : null, [`Induction ${Math.round(i.loud * 100)}%`]].filter(Boolean))),
       h('div', { class: 'note' }, 'Use the X-Ray toggle or the Engine view to see the intake, turbos and blower on the engine.')];
     },
+    dragsetup() {
+      const b = app.build, car = app.car(), st = app.stats(), su = app.setup(), TAU = Math.PI * 2;
+      const chute = b.chute || { type: 'none', design: 'red' }, hasFI = b.turbo !== 'none' || b.sc !== 'none';
+      const lb = st.weight * 2.2046, trap = 234 * Math.cbrt(st.hp / lb) * 1.609, et = 5.825 * Math.cbrt(lb / st.hp);
+      const final0 = st.redline * TAU * car.tireR / (60 * GEAR_DEFAULT[5] * (st.top / 3.6 * 1.06));
+      const gearKmh = (g, f) => st.redline * TAU * car.tireR / (60 * g * final0 * f) * 3.6;
+      const checks = p => {
+        const out = [];
+        if (!p.n) return out;
+        out.push(car.dims.W >= p.minWidth ? ['Rear mount fits this body', ''] : [`Body is ${car.dims.W.toFixed(2)} m wide — needs ${p.minWidth.toFixed(2)} m`, 'no']);
+        out.push(car.tips.startsWith('center') || byId(EXHAUSTS, b.exhaust).tips !== 'stock' && car.tips.startsWith('center') ? ['Pack sits above the centre exhaust', 'warn'] : ['Clear of the exhaust tips', '']);
+        out.push(trap > 320 && p.id !== 'dual' ? [`Est. trap speed ${Math.round(trap)} km/h — dual parachutes advised`, 'warn'] : trap > 240 ? [`Est. trap speed ${Math.round(trap)} km/h — a parachute is required at this speed`, ''] : [`Est. trap speed ${Math.round(trap)} km/h — optional below 240 km/h`, 'warn']);
+        out.push([`Adds ${p.weight} kg`, '']);
+        return out;
+      };
+      const ro = (id, html) => { const d = h('div', { class: 'readout', id }); d.innerHTML = html; return d; };
+      const gearText = s2 => s2.gears.map((g, i) => `<b>${i + 1}</b> ${g.toFixed(2)} → <b>${Math.round(gearKmh(g, s2.final))}</b> km/h`).join(' · ') + `<br>Final drive <b>${(final0 * s2.final).toFixed(2)}</b> : 1`;
+      const psiText = s2 => { const f = pressureEffect(s2.psiF), r = pressureEffect(s2.psiR), pc = v => (v >= 1 ? '+' : '') + Math.round((v - 1) * 100) + '%';
+        return `Front: traction <b>${pc(f.long)}</b>, cornering <b>${pc(f.lat)}</b>, rolling drag <b>${pc(f.roll)}</b><br>Rear: traction <b>${pc(r.long)}</b>, cornering <b>${pc(r.lat)}</b>, rolling drag <b>${pc(r.roll)}</b>`; };
+      const fi0 = byId(TURBOS, b.turbo).gain + byId(SUPERCHARGERS, b.sc).gain * (b.turbo !== 'none' ? 0.6 : 1), cap = Math.max(fi0, ENGINE_LIMIT - 1);
+      const boostText = s2 => { const want = fi0 * s2.boost, eff = Math.min(want, cap), hp = st.hp * (1 + eff) / (1 + fi0), psi = st.boostPsi * s2.boost * (want > cap ? cap / want : 1);
+        return `Boost <b>${psi.toFixed(1)} psi</b> → about <b>${Math.round(hp)} hp</b>${want > cap + 1e-6 ? '<br><b style="color:var(--bad)">Engine limit reached</b> — the wastegate is holding it back. Fit a stronger engine for more.' : ''}`; };
+      const upd = () => { const s2 = app.setup(); for (const [id, fn] of [['roGear', gearText], ['roPsi', psiText], ['roBoost', boostText]]) { const n = document.getElementById(id); if (n) n.innerHTML = fn(s2); } };
+      const set = patch => { app.setSetup(patch); upd(); };
+      return [
+        sec('Parachute', byId(PARACHUTES, chute.type).name),
+        PARACHUTES.map(p => {
+          const ck = checks(p), blocked = ck.some(c => c[1] === 'no');
+          const c = card(p, p.id === chute.type, p.price ? money(p.price) : 'Free', () => { if (blocked) return app.toast(ck.find(x => x[1] === 'no')[0]); app.previewChute(false); app.change(x => { x.chute = { ...chute, type: p.id }; }, 'rebuild'); });
+          if (ck.length) c.append(h('ul', { class: 'checks' }, ck.map(([t, k]) => h('li', { class: k }, t))));
+          return c;
+        }),
+        chute.type !== 'none' ? [sec('Canopy design'), swatches(CHUTE_DESIGNS.map(d => ({ id: d.id, name: d.name, color: d.a })), chute.design, v => { app.previewChute(false); app.change(x => { x.chute = { ...chute, design: v }; }, 'rebuild'); }),
+          h('button', { class: 'btn wide-btn' + (app.chutePreview ? ' hot' : ''), style: 'margin-top:10px', onclick: () => { app.previewChute(!app.chutePreview); renderPanel(); } }, app.chutePreview ? 'Pack the parachute away' : 'Preview deployed'),
+          h('div', { class: 'note' }, 'Deploy with P (or the Chute button) while driving. It can only be repacked once the car has stopped.')] : null,
+
+        sec('Launch control', su.lc ? 'Armed' : 'Off'),
+        chips([{ id: true, name: 'On' }, { id: false, name: 'Off' }], su.lc, v => { app.setSetup({ lc: v }); renderPanel(); }),
+        slider('Launch rpm', 2000, Math.round((st.redline - 300) / 100) * 100, 100, Math.min(su.lcRpm, st.redline - 300), v => v.toLocaleString('en-US') + ' rpm', v => set({ lcRpm: v })),
+        chips(LAUNCH_STYLES, su.lcStyle, v => { app.setSetup({ lcStyle: v }); renderPanel(); }),
+        h('div', { class: 'note' }, `${byId(LAUNCH_STYLES, su.lcStyle).desc} To launch: stop, hold the brake (S) or handbrake (Space), floor the throttle — the engine holds ${su.lcRpm.toLocaleString('en-US')} rpm — then release. Toggle while driving with G.`),
+
+        sec('Gear ratios', 'lower number = longer gear'),
+        h('div', { class: 'gear-grid' }, su.gears.map((g, i) => slider(`Gear ${i + 1}`, 0.5, 4.5, 0.01, g, v => v.toFixed(2), v => { const gs = app.setup().gears; gs[i] = v; set({ gears: gs }); }))),
+        slider('Final drive', 0.7, 1.35, 0.01, su.final, v => `${(final0 * v).toFixed(2)} : 1`, v => set({ final: v })),
+        ro('roGear', gearText(su)),
+        h('button', { class: 'btn wide-btn', onclick: () => { app.resetSetup(['gears', 'final']); renderPanel(); } }, 'Reset gearing to factory'),
+
+        sec('Tyre pressure', 'factory 32 psi'),
+        slider('Front', 12, 45, 1, su.psiF, v => v + ' psi', v => set({ psiF: v })),
+        slider('Rear', 12, 45, 1, su.psiR, v => v + ' psi', v => set({ psiR: v })),
+        ro('roPsi', psiText(su)),
+
+        sec('Boost pressure', hasFI ? `${(st.boostPsi * su.boost).toFixed(1)} psi` : 'not fitted'),
+        hasFI ? [slider('Boost', 0.6, 1.7, 0.05, su.boost, v => `${(st.boostPsi * v).toFixed(1)} psi (${Math.round(v * 100)}%)`, v => set({ boost: v })), ro('roBoost', boostText(su))]
+          : h('div', { class: 'note' }, 'This build is naturally aspirated. Fit a turbocharger or supercharger in the Boost panel to tune boost pressure.'),
+        h('div', { class: 'note' }, `Estimated quarter mile with this build: about ${et.toFixed(1)} s at ${Math.round(trap)} km/h. These settings are saved for this car and apply on every map.`),
+      ];
+    },
     garage() {
       const list = app.saves(), input = h('input', { type: 'text', maxlength: 40, placeholder: app.defaultName(), 'aria-label': 'Name for this save' });
       const save = () => app.saveNew(input.value);
@@ -279,5 +338,6 @@ export function initUI(app) {
   }
 
   refreshCats();
+  app.toast = toast;
   return { refresh, drawTach, toast, setRunning, setCategory: c => { cat = c; refreshCats(); renderPanel(); } };
 }

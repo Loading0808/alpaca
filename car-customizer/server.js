@@ -84,11 +84,18 @@ const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const BOUNDS = { x: 2600, z: 2600, yMin: -10, yMax: 80, speed: 140 };   // generous limits for the expressway map
 const SCORE_FILE = path.join(ROOT, 'mp-scores.json');
 const clients = new Map(), rooms = new Map();
-let nextId = 1, topScores = [];
-try { topScores = JSON.parse(fs.readFileSync(SCORE_FILE, 'utf8')).slice(0, 20); } catch (_) { topScores = []; }
+let nextId = 1, topScores = [], topDrag = { quarter: [], eighth: [] }, dragSeq = 1;
+try {
+  const d = JSON.parse(fs.readFileSync(SCORE_FILE, 'utf8'));
+  if (Array.isArray(d)) topScores = d.slice(0, 20);                 // file written by an older version
+  else { topScores = (d.scores || []).slice(0, 20); topDrag = { quarter: (d.drag && d.drag.quarter || []).slice(0, 20), eighth: (d.drag && d.drag.eighth || []).slice(0, 20) }; }
+} catch (_) { /* no scores yet */ }
+const saveScores = () => fs.writeFile(SCORE_FILE, JSON.stringify({ scores: topScores, drag: topDrag }), () => { });
+// drag racing: track lengths (m) and the quickest time the server will believe
+const DRAG = { quarter: { m: 402.336, minEt: 5.5 }, eighth: { m: 201.168, minEt: 3.4 } };
 
 const now = () => Date.now();
-const makeRoom = (id, name, priv) => { const r = { id, name, private: priv, code: priv ? id : null, players: new Map(), seed: crypto.randomInt(1, 1e9), created: now() }; rooms.set(id, r); return r; };
+const makeRoom = (id, name, priv, mode = 'highway', dist = null) => { const r = { id, name, private: priv, code: priv ? id : null, mode, dist, max: mode === 'drag' ? 2 : MAX_PLAYERS, players: new Map(), seed: crypto.randomInt(1, 1e9), created: now(), race: null }; rooms.set(id, r); return r; };
 for (let i = 1; i <= 3; i++) makeRoom('public-' + i, 'Expressway Lobby ' + i, false);
 const newCode = () => { const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let c; do { c = Array.from({ length: 6 }, () => A[crypto.randomInt(A.length)]).join(''); } while (rooms.has(c)); return c; };
 
@@ -107,6 +114,7 @@ function cleanBuild(b) {
       susp: { type: id(b.susp.type), drop: num(b.susp.drop, -0.08, 0.2), camberF: num(b.susp.camberF, 0, 12), camberR: num(b.susp.camberR, 0, 12), offF: num(b.susp.offF, 0, 60), offR: num(b.susp.offR, 0, 60),
         air: b.susp.air ? { preset: id(b.susp.air.preset), f: num(b.susp.air.f, -0.08, 0.2), r: num(b.susp.air.r, -0.08, 0.2) } : undefined },
       engine: id(b.engine), turbo: id(b.turbo), sc: id(b.sc), exhaust: id(b.exhaust), intake: id(b.intake),
+      chute: b.chute ? { type: id(b.chute.type), design: id(b.chute.design) } : undefined,
     };
     const bad = o => Object.values(o).some(v => v === null || (typeof v === 'object' && bad(v)));
     return bad(out) ? null : out;
@@ -115,8 +123,9 @@ function cleanBuild(b) {
 
 const send = (c, o) => wsSend(c.socket, JSON.stringify(o));
 const cast = (room, o, except) => { const s = JSON.stringify(o); for (const p of room.players.values()) if (p !== except) wsSend(p.socket, s); };
-const lobbyList = () => [...rooms.values()].filter(r => !r.private).map(r => ({ id: r.id, name: r.name, players: r.players.size, max: MAX_PLAYERS }));
-const roster = room => [...room.players.values()].map(p => ({ id: p.id, name: p.name, build: p.build }));
+const lobbyList = () => [...rooms.values()].filter(r => !r.private && r.mode === 'highway').map(r => ({ id: r.id, name: r.name, players: r.players.size, max: MAX_PLAYERS }));
+const roster = room => [...room.players.values()].map(p => ({ id: p.id, name: p.name, build: p.build, lane: p.lane }));
+const dragWaiting = () => { const o = { quarter: 0, eighth: 0 }; for (const r of rooms.values()) if (r.mode === 'drag' && !r.private && r.players.size === 1) o[r.dist]++; return o; };
 const board = room => ({ t: 'board', rows: [...room.players.values()].map(p => ({ id: p.id, name: p.name, score: Math.round(p.score), best: p.best })).sort((a, b) => Math.max(b.best, b.score) - Math.max(a.best, a.score)), top: topScores });
 
 function leave(c, why) {
@@ -124,18 +133,20 @@ function leave(c, why) {
   room.players.delete(c.id); c.room = null;
   log(`- ${c.name} left ${room.id}${why ? ' (' + why + ')' : ''} · ${room.players.size} in room`);
   cast(room, { t: 'out', id: c.id }); cast(room, { t: 'sys', m: `${c.name} left${why ? ' (' + why + ')' : ''}` }); cast(room, board(room));
-  if (room.private && room.players.size === 0) rooms.delete(room.id);
+  if (room.mode === 'drag') { if (room.race) { room.race.results.delete(c.id); concludeIfDone(room); } cast(room, { t: 'dr_wait' }); }
+  if ((room.private || room.mode === 'drag') && room.players.size === 0) rooms.delete(room.id);
 }
 function join(c, room, build) {
-  if (room.players.size >= MAX_PLAYERS) return send(c, { t: 'err', m: 'That room is full' });
+  if (room.players.size >= room.max) return send(c, { t: 'err', m: 'That room is full' });
   leave(c);
   let name = c.name, n = 2; while ([...room.players.values()].some(p => p.name === name)) name = `${c.name} ${n++}`;   // names are unique within a room
-  Object.assign(c, { room, shown: name, build, state: null, score: 0, best: 0, scoreT: now(), strikes: 0, lastPos: null, lastPosT: 0 });
+  const lane = room.mode === 'drag' ? ([...room.players.values()].some(p => p.lane === 0) ? 1 : 0) : 0;
+  Object.assign(c, { room, shown: name, build, lane, staged: false, state: null, score: 0, best: 0, scoreT: now(), strikes: 0, lastPos: null, lastPosT: 0 });
   c.name = name;
   room.players.set(c.id, c);
   log(`+ ${name} joined ${room.id} · ${room.players.size} in room`);
-  send(c, { t: 'joined', room: { id: room.id, name: room.name, private: room.private, code: room.code, max: MAX_PLAYERS }, you: c.id, name, players: roster(room), seed: room.seed, time: now() });
-  cast(room, { t: 'in', p: { id: c.id, name, build } }, c); cast(room, { t: 'sys', m: `${name} joined` }, c); cast(room, board(room));
+  send(c, { t: 'joined', room: { id: room.id, name: room.name, private: room.private, code: room.code, max: room.max, mode: room.mode, dist: room.dist }, lane, you: c.id, name, players: roster(room), seed: room.seed, time: now() });
+  cast(room, { t: 'in', p: { id: c.id, name, build, lane } }, c); cast(room, { t: 'sys', m: `${name} joined` }, c); cast(room, board(room));
 }
 
 function onState(c, m) {
@@ -153,7 +164,7 @@ function onState(c, m) {
   if (jump && Math.hypot(x - c.lastPos[0], z - c.lastPos[1]) > 400) return;   // even a reset cannot cross the map
   c.strikes = Math.max(0, c.strikes - 0.2);
   c.lastPos = [x, z]; c.lastPosT = t;
-  c.state = [c.id, +x.toFixed(2), +y.toFixed(2), +z.toFixed(2), +psi.toFixed(3), +vx.toFixed(2), +vy.toFixed(2), +st.toFixed(2), Math.round(rpm), flags & 7];
+  c.state = [c.id, +x.toFixed(2), +y.toFixed(2), +z.toFixed(2), +psi.toFixed(3), +vx.toFixed(2), +vy.toFixed(2), +st.toFixed(2), Math.round(rpm), flags & 15];
   // score check: points can only grow as fast as the scoring rules allow
   if (isNum(m.sc) && m.sc >= 0) {
     const dt = (t - c.scoreT) / 1000, cap = c.score + 9000 * dt + 4000;
@@ -170,8 +181,58 @@ function onBank(c, m) {
   c.best = Math.max(c.best, total); c.score = 0; c.scoreT = now();
   topScores.push({ name: c.name, score: total, car: c.build.carId, ts: now() });
   topScores.sort((a, b) => b.score - a.score); topScores.length = Math.min(topScores.length, 20);
-  fs.writeFile(SCORE_FILE, JSON.stringify(topScores), () => { });
+  saveScores();
   cast(c.room, board(c.room));
+}
+
+// ---- drag racing: the server fires the tree and judges the result
+function onDrag(c, m) {
+  const room = c.room; if (!room || room.mode !== 'drag') return;
+  const t = now();
+  if (m.ev === 'stage') {
+    c.staged = !!m.v;
+    cast(room, { t: 'dr_stage', id: c.id, v: c.staged }, c);
+    const all = [...room.players.values()];
+    if (!room.race && all.every(p => p.staged)) {                     // everyone in the beams and still: start the tree
+      const tree = room.tree === 'pro' ? 'pro' : 'sportsman', lead = 1200 + crypto.randomInt(1500) + (tree === 'pro' ? 400 : 1500);
+      room.race = { green: t + lead, tree, results: new Map(), ids: all.map(p => p.id), firstAt: 0 };
+      for (const p of all) p.staged = false;
+      cast(room, { t: 'dr_go', green: room.race.green, tree });
+    }
+    return;
+  }
+  if (m.ev === 'result') {
+    const race = room.race, D = DRAG[room.dist];
+    if (!race || !race.ids.includes(c.id) || race.results.has(c.id)) return;
+    const ok = isNum(m.rt) && isNum(m.et) && isNum(m.trap) && m.rt > -3 && m.rt < 8 && m.et < 90 && m.trap > 0;
+    // the run must be physically possible, must fit the wall clock since the green light, and the
+    // position stream must show the car actually reached the far end of the strip
+    const elapsed = (t - race.green) / 1000, tooQuick = ok && (m.et < D.minEt || m.trap > 560);
+    const clock = ok && Math.abs(elapsed - (m.rt + m.et)) > 2.5, travelled = c.lastPos && c.lastPos[0] > D.m - 80;
+    if (!ok || tooQuick || clock || !travelled) {
+      race.results.set(c.id, { id: c.id, name: c.name, rejected: true });
+      log(`  drag ${room.id}: rejected ${c.name} — rt ${m.rt} et ${m.et}, wall clock ${elapsed.toFixed(2)} s, reached x=${c.lastPos ? Math.round(c.lastPos[0]) : 'n/a'}`);
+      send(c, { t: 'err', m: 'Run rejected by the server: ' + (!ok ? 'malformed result' : tooQuick ? 'faster than is possible' : clock ? 'timing does not match the race clock' : 'the car never reached the finish') });
+    } else race.results.set(c.id, { id: c.id, name: c.name, car: c.build.carId, rt: +m.rt.toFixed(3), et: +m.et.toFixed(3), trap: Math.round(m.trap), foul: m.rt < 0 });
+    if (!race.firstAt) race.firstAt = t;
+    concludeIfDone(room);
+  }
+}
+function concludeIfDone(room, force) {
+  const race = room.race; if (!race) return;
+  const present = race.ids.filter(id => room.players.has(id));
+  if (!force && !present.every(id => race.results.has(id))) return;
+  if (!present.length) { room.race = null; return; }
+  const rows = present.map(id => race.results.get(id) || { id, name: room.players.get(id).name, dnf: true });
+  // winner: first across the line (reaction + elapsed time) among clean, verified runs; a red light loses
+  const clean = rows.filter(r => !r.rejected && !r.dnf && !r.foul).sort((a, b) => (a.rt + a.et) - (b.rt + b.et));
+  const fouls = rows.filter(r => r.foul).sort((a, b) => b.rt - a.rt);
+  const winner = clean.length ? clean[0].id : fouls.length ? fouls[0].id : 0;
+  for (const r of clean) { const list = topDrag[room.dist]; list.push({ name: r.name, et: r.et, rt: r.rt, trap: r.trap, car: r.car, ts: now() }); list.sort((a, b) => a.et - b.et); list.length = Math.min(list.length, 20); }
+  if (clean.length) saveScores();
+  room.race = null;
+  cast(room, { t: 'dr_result', rows, winner, dist: room.dist, top: topDrag });
+  log(`  drag ${room.id}: ${rows.map(r => `${r.name} ${r.rejected ? 'REJECTED' : r.dnf ? 'DNF' : (r.foul ? 'RED ' : '') + r.et}`).join(' vs ')}`);
 }
 
 function onMessage(c, text) {
@@ -181,13 +242,20 @@ function onMessage(c, text) {
   switch (m.t) {
     case 's': return onState(c, m);
     case 'ping': return send(c, { t: 'pong', c: isNum(m.c) ? m.c : 0, time: now() });
-    case 'hello': c.name = cleanName(m.name); return send(c, { t: 'welcome', id: c.id, name: c.name, time: now(), lobbies: lobbyList(), top: topScores });
-    case 'lobbies': return send(c, { t: 'lobbies', list: lobbyList(), top: topScores });
-    case 'join': case 'create': {
+    case 'hello': c.name = cleanName(m.name); return send(c, { t: 'welcome', id: c.id, name: c.name, time: now(), lobbies: lobbyList(), top: topScores, topDrag, dragWaiting: dragWaiting() });
+    case 'lobbies': return send(c, { t: 'lobbies', list: lobbyList(), top: topScores, topDrag, dragWaiting: dragWaiting() });
+    case 'dr': return onDrag(c, m);
+    case 'join': case 'create': case 'dragmatch': {
       const t = now(); if (t - c.joinT < 700) return send(c, { t: 'err', m: 'Slow down a moment' }); c.joinT = t;
       const build = cleanBuild(m.build); if (!build) return send(c, { t: 'err', m: 'That car could not be validated' });
       if (m.name) c.name = cleanName(m.name);
-      if (m.t === 'create') return join(c, makeRoom(newCode(), 'Private room', true), build);
+      const dist = m.dist === 'eighth' ? 'eighth' : 'quarter', tree = m.tree === 'pro' ? 'pro' : 'sportsman';
+      if (m.t === 'dragmatch') {                                       // matchmaking: join someone who is waiting, or wait for an opponent
+        let room = [...rooms.values()].find(r => r.mode === 'drag' && !r.private && r.dist === dist && r.players.size === 1 && !r.race);
+        if (!room) { room = makeRoom('drag-' + dragSeq++, `Drag race · ${dist === 'eighth' ? '1/8' : '1/4'} mile`, false, 'drag', dist); room.tree = tree; }
+        return join(c, room, build);
+      }
+      if (m.t === 'create') { const r = m.mode === 'drag' ? makeRoom(newCode(), `Private drag · ${dist === 'eighth' ? '1/8' : '1/4'} mile`, true, 'drag', dist) : makeRoom(newCode(), 'Private room', true); r.tree = tree; return join(c, r, build); }
       const key = typeof m.code === 'string' ? m.code.trim().toUpperCase() : typeof m.room === 'string' ? m.room : '';
       const room = rooms.get(key);
       // a private room can only be entered with its exact code; guesses are rate-limited
@@ -219,6 +287,7 @@ setInterval(() => {
     if (!room.players.size) continue;
     const s = []; for (const p of room.players.values()) if (p.state) s.push(p.state);
     cast(room, { t: 'snap', time: t, s });
+    if (room.race && (t - room.race.green > 45000 || (room.race.firstAt && t - room.race.firstAt > 25000))) concludeIfDone(room, true);   // a racer who never finishes is a DNF
     if (tick % 15 === 0) cast(room, board(room));
   }
 }, TICK_MS);

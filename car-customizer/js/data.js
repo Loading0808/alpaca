@@ -418,6 +418,42 @@ export function airPresetHeight(car, id) {
 }
 export const defaultAir = () => ({ preset: 'street', f: 0, r: 0 });
 
+// ---------------------------------------------------------------------------
+// Drag racing parts and setup
+// ---------------------------------------------------------------------------
+// cda = drag area (m²) once fully open; minWidth = body width needed to mount it
+export const PARACHUTES = [
+  { id: 'none', name: 'No parachute', price: 0, weight: 0, cda: 0, n: 0, desc: 'Nothing fitted.' },
+  { id: 'single', name: 'Single 10 ft', price: 780, weight: 7, cda: 5.2, n: 1, r: 1.5, minWidth: 0, desc: 'One round canopy. Enough for trap speeds up to about 320 km/h.' },
+  { id: 'cross', name: 'Cross-form stabiliser', price: 950, weight: 6, cda: 3.6, n: 1, r: 1.35, cross: true, minWidth: 0, desc: 'Cross-shaped canopy: less drag but opens softly and keeps the car straight.' },
+  { id: 'dual', name: 'Dual 10 ft', price: 1500, weight: 13, cda: 9.4, n: 2, r: 1.5, minWidth: 1.8, desc: 'Two canopies side by side for very fast cars. Needs a body at least 1.80 m wide.' },
+];
+export const CHUTE_DESIGNS = [
+  { id: 'red', name: 'Red / white', a: '#d21f1f', b: '#f2f2f2' },
+  { id: 'black', name: 'Stealth black', a: '#141416', b: '#2b2d33' },
+  { id: 'blue', name: 'Blue / yellow', a: '#1d4ed8', b: '#f2c100' },
+  { id: 'orange', name: 'Apex orange', a: '#ff5a1f', b: '#141416' },
+  { id: 'green', name: 'Lime / black', a: '#7ac143', b: '#111214' },
+];
+export const GEAR_DEFAULT = [3.4, 2.2, 1.6, 1.25, 1.0, 0.82];
+export const LAUNCH_STYLES = [
+  { id: 'grip', name: 'Grip', slip: 0.97, desc: 'Holds the tyres just under their limit. Most consistent.' },
+  { id: 'balanced', name: 'Balanced', slip: 1.06, desc: 'Allows a little wheelspin to keep the engine in its power band.' },
+  { id: 'aggressive', name: 'Aggressive', slip: 9, desc: 'No torque management. Fastest with enough grip, smoky without.' },
+];
+/** Per-car drag setup. ratios multiply into the wheels through the final drive; psi values are tyre pressures. */
+export const defaultSetup = () => ({ lc: false, lcRpm: 4000, lcStyle: 'grip', gears: GEAR_DEFAULT.slice(), final: 1, psiF: 32, psiR: 32, boost: 1 });
+/**
+ * Tyre pressure → { long, lat, stiff, roll }: traction, cornering grip, response and rolling resistance
+ * relative to 32 psi. Soft tyres hook up harder in a straight line but squirm and drag; hard tyres roll freely.
+ */
+export function pressureEffect(psi) {
+  const lo = Math.min(1, Math.max(0, (32 - psi) / 18)), hi = Math.min(1, Math.max(0, (psi - 32) / 13));
+  return { long: 1 + 0.085 * lo - 0.07 * hi, lat: 1 - 0.1 * lo * lo - 0.06 * hi * hi - 0.03 * lo, stiff: 1 - 0.28 * lo + 0.1 * hi, roll: Math.pow(32 / psi, 0.75) };
+}
+/** How much boost an engine tolerates before the limiter steps in (multiple of its naturally aspirated power). */
+export const ENGINE_LIMIT = 2.6;
+
 export const byId = (list, id) => list.find(o => o.id === id) || list[0];
 
 export function defaultBuild(car) {
@@ -431,5 +467,6 @@ export function defaultBuild(car) {
     susp: { type: 'stock', drop: 0, camberF: 0.5, camberR: 0.5, offF: 0, offR: 0 },
     engine: car.stock.engine, turbo: car.stock.turbo, sc: car.stock.sc,
     exhaust: 'stock', intake: 'stock',
+    chute: { type: 'none', design: 'red' },
   };
 }
