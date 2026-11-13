@@ -91,6 +91,7 @@ export class Score {
     const total = Math.round(this.score + (this.drift >= 40 ? this.drift * this.mult : 0));
     const res = total > 0 ? { total, reason, ...Records.submit(this.world, total, this.car), stats: this.stats } : null;
     const w = this.world, c = this.car; this.reset(w, c);
+    if (res && this.onBank) this.onBank(res);
     if (res) this._emit(`${reason}: ${res.total.toLocaleString('en-US')} pts${res.pb ? ' — new personal best' : ''}`, 0, res.pb ? 'good' : 'bad');
     return res;
   }

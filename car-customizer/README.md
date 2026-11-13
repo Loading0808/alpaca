@@ -62,6 +62,9 @@ how it accelerates, grips and slides.
 | Shift up / shift down (semi-automatic and manual) | `E` / `Q` |
 | Clutch (manual only — hold it while you shift) | `Left Shift` |
 | Cycle transmission mode | `T` |
+| Cycle driving mode | `M` |
+| Air suspension preset: Show / Street / Track / Off-Road | `1` `2` `3` `4` |
+| Chat (multiplayer) | `Enter` to type, `Enter` to send, `Esc` to cancel |
 | Change camera (chase, close, hood, overhead) | `C` |
 | Put the car back on the road | `R` |
 | Return to the garage (banks your score) | `Esc` |
@@ -86,6 +89,31 @@ shift up, and a downshift that would over-rev the engine is refused. Select R fr
 by shifting down past neutral. The dashboard shows gear, rpm and speed; the gear indicator
 lights up when it is time to shift.
 
+**Driving modes** (press `M` while driving, or choose in the Drive menu)
+
+| Mode | What changes in the physics |
+| --- | --- |
+| Comfort | Slow, smooth steering and throttle, soft suspension with more body roll, stability control steps in early, no power slides |
+| Sport | Quicker steering and throttle, a little slip allowed |
+| Track | Stiff and flat, +5 % tyre grip, stronger brakes, faster shifts, later stability control |
+| Drift | Rear grip reduced, traction control off, fast steering lock; any car with driven rear wheels slides on power and holds it |
+| Race | Fastest steering, throttle and shifts, +6 % grip, strongest brakes, minimal aids |
+| Custom | Seven sliders: steering response, throttle response, traction control, stability control, suspension stiffness, brake strength, drift assist |
+
+**Air suspension presets** (only on cars fitted with *Air Suspension* in the Stance panel)
+
+| Preset | Key | Effect |
+| --- | --- | --- |
+| Show | `1` | Laid out on the ground with the wheels tucked. Rises 22 mm automatically once the car is moving. Grounding out costs grip and speed. |
+| Street | `2` | Factory ride height, full travel. |
+| Track | `3` | 45 mm lower, stiffer: lower centre of gravity, 40 % less body roll, more cornering grip. |
+| Off-Road | `4` | 55 mm higher with long travel: much more grip and less drag on grass, more roll and less grip on tarmac. |
+
+The four preset buttons are in the Stance panel, with separate front and rear height sliders
+(set them differently for rake) and a live ground-clearance readout. Presets can be changed
+while driving and the suspension glides to the new height without interrupting anything. Each
+car remembers its last air settings.
+
 **Scoring**
 
 | Manoeuvre | Points |
@@ -104,6 +132,43 @@ The **leaderboard** in the Drive menu keeps the ten best runs per map with drive
 car, and highlights your personal best. Set your driver name there; several people can use the
 same computer under different names. Scores are stored in the browser on that computer — there
 is no online ranking. Rows marked *target* are reference scores to aim for, not real players.
+
+**Multiplayer** (Midnight Expressway)
+
+Multiplayer is real: every other car is another person connected to the same server.
+
+1. Start the server with `node server.js` and open the address it prints. Live Server cannot
+   host multiplayer — it only serves files.
+2. Press **Drive**. The menu connects automatically and lists the public lobbies with their
+   player counts. Press **Join**, or **Create private room** to get a six-character code to
+   share. Friends enter the code and press **Join**. Private rooms are not listed and cannot
+   be entered without the code.
+3. You see each player's customised car with their name above it, a player list with scores,
+   and a chat box (press `Enter`). The **Online** leaderboard tab shows the server's all-time
+   best multiplayer runs.
+
+Playing with friends:
+
+- **Same Wi-Fi:** run `node server.js` on one computer and have friends open
+  `http://<that computer's IP address>:5173` (find the address with `ipconfig` on Windows or
+  `ifconfig` / `ip addr` on Mac and Linux).
+- **Over the internet:** deploy this folder to any host that runs Node.js (Render, Railway,
+  Fly.io, a VPS). Start command: `node server.js`. It listens on the `PORT` environment
+  variable and needs no packages installed. Everyone then opens that site's address. Over
+  https the game uses secure WebSockets automatically.
+- **Game hosted somewhere else:** type the server's address (for example
+  `wss://my-server.example.com/ws`) into the *Server address* box and press **Connect**.
+
+What the server checks: message size and rate, that a car build is well-formed, that positions
+are inside the map, that no car moves faster than is possible or teleports, that scores only
+grow as fast as the scoring rules allow, and that a banked run is no bigger than the points it
+saw being earned. Names and chat are sanitised and rate-limited. Players who stop responding
+for 30 seconds are removed.
+
+Things to know: up to 8 players per room. Traffic in multiplayer follows the server clock so
+everyone sees the same vehicles in the same places, but it does not brake or change lane for
+players as single-player traffic does. Players' cars pass through each other. Single-player is
+unchanged and needs no server.
 
 **Handling notes**
 
@@ -165,11 +230,13 @@ car-customizer/
 │   ├── world.js        Drivable locations: expressway, race circuit, night city
 │   ├── traffic.js      AI traffic for the expressway
 │   ├── score.js        Points, combo multiplier, records and leaderboard
-│   ├── drive.js        Drive mode: vehicle physics, transmissions, cameras, lap timing
+│   ├── drive.js        Drive mode: vehicle physics, driving modes, transmissions, cameras
+│   ├── net.js          Multiplayer client (WebSocket)
+│   ├── remote.js       Other players' cars and name tags
 │   ├── stats.js        Performance model and pricing
 │   └── ui.js           Panels, stats bars, tachometer
 ├── vendor/three/       Three.js r170 (MIT licence) — bundled for offline use
-├── server.js           Zero-dependency local web server
+├── server.js           Zero-dependency web server + multiplayer server (WebSocket)
 └── .vscode/            Recommended extension + F5 launch config
 ```
 

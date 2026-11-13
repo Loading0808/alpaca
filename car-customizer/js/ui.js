@@ -4,6 +4,7 @@ import {
   PAINT_COLORS, FINISHES, RIMS, RIM_COLORS, CALIPER_COLORS, TIRES, SUSPENSIONS, byId,
 } from './data.js';
 import { maxDrop, maxRim } from './stats.js';
+import { AIR_PRESETS, AIR_LIFT, slamHeight } from './data.js';
 
 const $ = id => document.getElementById(id);
 const money = v => '$' + Math.round(v).toLocaleString('en-US');
@@ -108,10 +109,22 @@ export function initUI(app) {
           x.susp.type = o.id; const m = maxDrop(car, o);
           x.susp.drop = Math.min(x.susp.drop, m); if (o.id !== 'stock' && x.susp.drop === 0) x.susp.drop = Math.min(m, 0.03);
           x.susp.camberF = Math.min(x.susp.camberF, o.maxCamber); x.susp.camberR = Math.min(x.susp.camberR, o.maxCamber);
+          if (o.air) { app.restoreAir(x); x.susp.drop = 0; }
         }, 'rebuild'), o.handling ? [[`Handling +${o.handling}`, 'up']] : [])),
-        s.air ? h('button', { class: 'btn wide-btn' + (app.aired ? ' hot' : ''), onclick: () => { app.toggleAir(); renderPanel(); } }, app.aired ? 'Air up — raise to ride height' : 'Air out — lay frame') : null,
+        ...(s.air ? (() => {
+          const air = b.susp.air || { preset: 'street', f: 0, r: 0 }, info = app.rideInfo(), slam = Math.round(slamHeight(car) * 1000), lift = Math.round(AIR_LIFT * 1000);
+          const mm = v => `${Math.round(car.gc * 1000 - v)} mm clearance`;
+          return [
+            sec('Air suspension preset', air.preset === 'custom' ? 'Custom' : byId(AIR_PRESETS, air.preset).name),
+            h('div', { class: 'air-grid' }, AIR_PRESETS.map(p => h('button', { class: 'air-btn' + (air.preset === p.id ? ' on' : ''), title: p.desc, onclick: () => app.setAirPreset(p.id) }, h('b', {}, p.name), h('small', {}, `key ${p.key}`)))),
+            h('div', { class: 'note' }, air.preset === 'custom' ? 'Custom heights set with the sliders below.' : byId(AIR_PRESETS, air.preset).desc),
+            h('div', { class: 'air-read' }, h('span', {}, 'Ground clearance'), h('b', { id: 'airReadout' }, `Front ${info.f} mm · Rear ${info.r} mm`)),
+            slider('Front height', -lift, slam, 1, Math.round(air.f * 1000), mm, v => app.setAirHeight('f', v / 1000)),
+            slider('Rear height', -lift, slam, 1, Math.round(air.r * 1000), mm, v => app.setAirHeight('r', v / 1000)),
+          ];
+        })() : []),
         sec('Alignment & fitment'),
-        slider('Ride height', 0, Math.max(md, 1), 1, Math.round(b.susp.drop * 1000), v => v ? `−${v} mm` : 'Stock', stance((x, v) => { x.drop = v / 1000; }), md === 0),
+        s.air ? null : slider('Ride height', 0, Math.max(md, 1), 1, Math.round(b.susp.drop * 1000), v => v ? `−${v} mm` : 'Stock', stance((x, v) => { x.drop = v / 1000; }), md === 0),
         slider('Front camber', 0, s.maxCamber, 0.1, b.susp.camberF, v => `−${v.toFixed(1)}°`, stance((x, v) => { x.camberF = v; }), s.id === 'stock'),
         slider('Rear camber', 0, s.maxCamber, 0.1, b.susp.camberR, v => `−${v.toFixed(1)}°`, stance((x, v) => { x.camberR = v; }), s.id === 'stock'),
         slider('Front wheel offset', 0, 50, 1, b.susp.offF, v => `+${v} mm`, stance((x, v) => { x.offF = v; })),

@@ -401,6 +401,23 @@ export const SUSPENSIONS = [
   { id: 'air', name: 'Air Suspension — Air Lift 3P', price: 5200, weight: 14, handling: 5, maxDrop: 0.2, maxCamber: 10, air: true, color: '#1f6feb', desc: 'Adjustable on the fly. Lay frame at the press of a button.' },
 ];
 
+// Air-suspension presets. `h` picks the ride height (metres below stock; negative = raised) from the
+// car's own limits; the other values feed the driving physics.
+export const AIR_PRESETS = [
+  { id: 'show', name: 'Show', key: '1', roll: 1.05, rollF: 0.55, grip: 0.97, desc: 'Laid out on the ground for meets. Rises a little automatically once you drive off.' },
+  { id: 'street', name: 'Street', key: '2', roll: 1.0, rollF: 0.56, grip: 1, desc: 'Factory ride height. Comfortable, full suspension travel.' },
+  { id: 'track', name: 'Track', key: '3', roll: 0.6, rollF: 0.5, grip: 1.035, desc: 'Lowered and stiffened: lower centre of gravity, less body roll, sharper turn-in.' },
+  { id: 'offroad', name: 'Off-Road', key: '4', roll: 1.4, rollF: 0.6, grip: 0.96, desc: 'Maximum ride height and long travel for rough ground. More roll on tarmac.' },
+];
+/** Lowest the body can go before it touches the ground. */
+export const slamHeight = car => Math.min(car.gc - 0.03, 0.105);
+export const AIR_LIFT = 0.055;                         // how far Off-Road raises the car above stock
+export function airPresetHeight(car, id) {
+  const slam = slamHeight(car);
+  return id === 'show' ? slam : id === 'track' ? Math.min(0.045, slam - 0.02) : id === 'offroad' ? -AIR_LIFT : 0;
+}
+export const defaultAir = () => ({ preset: 'street', f: 0, r: 0 });
+
 export const byId = (list, id) => list.find(o => o.id === id) || list[0];
 
 export function defaultBuild(car) {

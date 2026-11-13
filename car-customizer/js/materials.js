@@ -73,7 +73,7 @@ export function createMaterials() {
     plate: std({ color: '#e8e8e2', side: DS, roughness: 0.6 }),
     grille: std({ color: '#ffffff', map: grilleTexture(), side: DS, roughness: 0.55, metalness: 0.4 }),
     seam: std({ color: '#050505', side: DS, roughness: 0.8 }),
-    seamThin: std({ color: '#000', side: DS, roughness: 0.8, wireframe: false, transparent: true, opacity: 0.35 }),
+    seamThin: std({ color: '#000', side: DS, roughness: 0.8, transparent: true, opacity: 0.16 }),
     carbon: phys({ color: '#ffffff', map: carbonMap, side: DS, roughness: 0.3, metalness: 0.2, clearcoat: 1, clearcoatRoughness: 0.08 }),
     blackGloss: phys({ color: '#070708', side: DS, roughness: 0.25, clearcoat: 1 }),
     rivet: std({ color: '#c9ccd1', metalness: 1, roughness: 0.3 }),

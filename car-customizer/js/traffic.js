@@ -50,20 +50,33 @@ function parts(id) {
 }
 
 export class Traffic {
-  constructor(road) {
+  /** opts.sync: positions are a pure function of the shared server clock, so every player in a room sees identical traffic. */
+  constructor(road, opts = {}) {
+    this.sync = !!opts.sync; const mul = this.sync ? 4 : 1;
     this.road = road; this.group = new THREE.Group(); this.cars = []; this.meshes = [];
     const paint = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.5 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x0b0c0e, roughness: 0.3, metalness: 0.4 });
     const tail = new THREE.MeshBasicMaterial({ color: 0xff2020 }), headM = new THREE.MeshBasicMaterial({ color: 0xfff1c9 });
     for (const t of TYPES) {
-      const set = parts(t.id).map((geo, i) => { const m = new THREE.InstancedMesh(geo, [paint, dark, tail, headM][i], t.n); m.frustumCulled = false; m.castShadow = i < 2; this.group.add(m); return m; });
-      for (let k = 0; k < t.n; k++) {
-        set[0].setColorAt(k, new THREE.Color(COLORS[Math.floor(Math.random() * COLORS.length)]));
+      const set = parts(t.id).map((geo, i) => { const m = new THREE.InstancedMesh(geo, [paint, dark, tail, headM][i], t.n * mul); m.frustumCulled = false; m.castShadow = i < 2; this.group.add(m); return m; });
+      for (let k = 0; k < t.n * mul; k++) {
+        set[0].setColorAt(k, new THREE.Color(COLORS[(k * 7 + t.n) % COLORS.length]));
         this.cars.push({ type: t, set, k, s: 0, lat: 0, lane: 0, v: 25, vDes: 25, cool: Math.random() * 6, pds: 0, hitT: 0 });
       }
       set[0].instanceColor.needsUpdate = true;
     }
     this.dummy = new THREE.Object3D();
+  }
+
+  /** Synced traffic: lay every vehicle out around the whole loop from the room's seed. Each lane moves at one speed. */
+  seed(seed) {
+    let x = seed >>> 0; const rnd = () => { x = (x * 1664525 + 1013904223) >>> 0; return x / 4294967296; };
+    const { lanes, len } = this.road, per = lanes.map(() => []);
+    this.cars.forEach((c, i) => per[i % lanes.length].push(c));
+    per.forEach((list, lane) => {
+      const gap = len / list.length;
+      list.forEach((c, k) => { c.lane = lane; c.lat = lanes[lane]; c.s0 = k * gap + (rnd() - 0.5) * gap * 0.5; c.v = c.vDes = 21 + lane * 3; c.pds = 0; c.hitT = 0; });
+    });
   }
 
   _wrap(d) { const L = this.road.len; return ((d + L / 2) % L + L) % L - L / 2; }
@@ -99,9 +112,12 @@ export class Traffic {
    * pl = { s, lat, v, len, wid } in road coordinates.
    * Returns { passes: [{gap, side}], hit: {car, dLat, dLong} | null }.
    */
-  update(dt, pl) {
-    const { lanes, at } = this.road, cars = this.cars, out = { passes: [], hit: null };
+  update(dt, pl, clock = 0) {
+    const { lanes, at, len } = this.road, cars = this.cars, out = { passes: [], hit: null };
     for (const c of cars) {
+      let ds, target = lanes[c.lane];
+      if (this.sync) { c.s = (c.s0 + c.v * clock) % len; ds = this._wrap(c.s - pl.s); if (Math.abs(c.pds - ds) > 60) c.pds = ds; }
+      else {
       // --- car following (IDM): nearest vehicle ahead in this lane, the player included
       let gap = 1e9, dv = 0, lv = 0;
       const consider = (s, lat, v, len) => { if (Math.abs(lat - c.lat) > 2.1) return; const d = this._wrap(s - c.s) - (len + c.type.len) / 2; if (d > -1 && d < gap) { gap = Math.max(0.5, d); dv = c.v - v; lv = v; } };
@@ -115,7 +131,6 @@ export class Traffic {
       c.s += c.v * dt;
       // --- lane changes: get round slower traffic, drift back out of the fast lanes when clear
       c.cool -= dt;
-      const target = lanes[c.lane];
       if (Math.abs(c.lat - target) > 0.02) c.lat += Math.sign(target - c.lat) * Math.min(Math.abs(target - c.lat), 1.25 * dt);
       else if (c.cool <= 0) {
         let to = -1;
@@ -124,13 +139,14 @@ export class Traffic {
         if (to >= 0) { c.lane = to; c.cool = 5 + Math.random() * 7; } else c.cool = 0.6;
       }
       // --- keep the traffic around the player
-      let ds = this._wrap(c.s - pl.s);
+      ds = this._wrap(c.s - pl.s);
       if (ds < -BEHIND || ds > AHEAD + 60) {
         // re-enter out of sight, in a gap; if there is none this frame, try again on the next one
         const ahead = ds < 0, s0 = c.s, l0 = c.lane; let ok = false;
         for (let k = 0; k < 6 && !ok; k++) { this._place(c, ahead ? pl.s + AHEAD - Math.random() * 140 : pl.s - BEHIND + Math.random() * 50); ok = this._free(c, c.lane, 34 + c.type.len, 34 + c.type.len); }
         if (!ok) { c.s = s0; c.lane = l0; c.lat = lanes[l0]; }
         ds = this._wrap(c.s - pl.s); c.pds = ds;
+      }
       }
       // --- interaction with the player
       const dLat = pl.lat - c.lat, halfL = (pl.len + c.type.len) / 2, halfW = (pl.wid + c.type.wid) / 2;

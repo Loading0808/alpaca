@@ -66,9 +66,18 @@
           <div class="sec">Transmission</div>
           <div class="chip-row" id="dmTrans"></div>
           <p class="dm-note" id="dmTransDesc"></p>
-          <div class="keys"><b>W / ↑</b> throttle <b>S / ↓</b> brake <b>A D / ← →</b> steer <b>Space</b> handbrake <b>E</b> shift up <b>Q</b> shift down <b>L-Shift</b> clutch <b>T</b> transmission <b>C</b> camera <b>R</b> reset <b>Esc</b> garage</div>
+          <div class="sec">Driving mode</div>
+          <div class="chip-row" id="dmModes"></div>
+          <p class="dm-note" id="dmModeDesc"></p>
+          <div id="dmCustom"></div>
+          <div class="keys"><b>W / ↑</b> throttle <b>S / ↓</b> brake <b>A D / ← →</b> steer <b>Space</b> handbrake <b>E</b> shift up <b>Q</b> shift down <b>L-Shift</b> clutch <b>T</b> transmission <b>M</b> driving mode <b>1–4</b> air suspension <b>Enter</b> chat <b>C</b> camera <b>R</b> reset <b>Esc</b> garage</div>
         </div>
         <div>
+          <div class="sec">Multiplayer — Midnight Expressway</div>
+          <p class="dm-note" id="mpStatus">Not connected.</p>
+          <div class="save-row"><input type="text" id="mpUrl" aria-label="Multiplayer server address" placeholder="Server address (leave empty for this site)" /><button class="btn" id="mpConnect">Connect</button></div>
+          <div id="mpLobbies"></div>
+          <div class="save-row" id="mpPrivate" hidden><button class="btn btn-drive" id="mpCreate">Create private room</button><input type="text" id="mpCode" maxlength="6" placeholder="Room code" aria-label="Private room code" /><button class="btn" id="mpJoinCode">Join</button></div>
           <div class="sec">Leaderboard</div>
           <div class="chip-row" id="dmTabs"></div>
           <table class="board"><thead><tr><th>#</th><th>Driver</th><th>Car</th><th>Score</th></tr></thead><tbody id="dmBoard"></tbody></table>
@@ -83,7 +92,15 @@
 
   <div class="drive-hud" id="driveHud">
     <div class="hud-top">
-      <div class="hud-place"><small>Now driving</small><b id="hudPlace"></b><small id="hudTrans" class="hud-trans"></small></div>
+      <div class="hud-left">
+        <div class="hud-place"><small>Now driving</small><b id="hudPlace"></b><small id="hudTrans" class="hud-trans"></small><small id="hudAir" class="hud-air"></small></div>
+        <div class="hud-mp" id="hudMp" hidden>
+          <div class="mp-room"><b id="mpRoomName"></b><small id="mpRoomCode"></small></div>
+          <ol class="mp-players" id="mpPlayers"></ol>
+          <div class="mp-chat" id="mpChat" aria-live="polite"></div>
+          <input type="text" id="chatInput" maxlength="140" placeholder="Press Enter to chat" aria-label="Chat message" />
+        </div>
+      </div>
       <div class="hud-mid">
         <div class="hud-score">
           <div><small>Score</small><b id="hudScore">0</b></div>

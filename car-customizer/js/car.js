@@ -11,14 +11,15 @@ import { disposeTree, clamp } from './geo.js';
 const DEG = Math.PI / 180;
 
 export class Car {
-  constructor(M) {
-    this.M = M;
+  /** opts.lite: no lights of its own (used for other players' cars). */
+  constructor(M, opts = {}) {
+    this.M = M; this.lite = !!opts.lite;
     this.root = new THREE.Group(); this.root.position.y = 0.05;
     this.body = new THREE.Group(); this.root.add(this.body);
     this.wheels = []; this.struts = []; this.flames = [];
     this.xray = false; this.lights = false; this.dynRoll = 0; this.dynPitch = 0; this.flameT = 0; this.roll = 0; this.time = 0;
-    this.flameLight = new THREE.PointLight(0xff8a30, 0, 5, 2); this.root.add(this.flameLight);
-    this.beams = [1, -1].map(() => { const s = new THREE.SpotLight(0xdfe8ff, 0, 16, 0.5, 0.6, 1.2); this.root.add(s, s.target); return s; });
+    this.flameLight = new THREE.PointLight(0xff8a30, 0, 5, 2); this.beams = [];
+    if (!this.lite) { this.root.add(this.flameLight); this.beams = [1, -1].map(() => { const s = new THREE.SpotLight(0xdfe8ff, 0, 16, 0.5, 0.6, 1.2); this.root.add(s, s.target); return s; }); }
   }
 
   build(build) {
@@ -72,10 +73,12 @@ export class Car {
     this.setXray(this.xray); this.setLights(this.lights);
   }
 
-  /** drop: metres below stock ride height. */
-  applyStance(build, drop) {
+  /** dropF / dropR: metres below stock ride height at the front and rear axle (negative = raised). */
+  applyStance(build, dropF, dropR = dropF) {
     const S = this.S, kit = this.r.kit;
-    this.drop = drop;
+    this.dropF = dropF; this.dropR = dropR; this.drop = (dropF + dropR) / 2;
+    this.rake = Math.atan2(dropF - dropR, S.xf - S.xr);          // nose-down is negative pitch
+    this.body.rotation.z = this.rake + this.dynPitch;
     for (const p of this.wheels) {
       const { ax, side, width } = p.userData, xa = ax ? S.xr : S.xf;
       const flare = (ax ? kit.flareR : kit.flareF) || 0, off = (ax ? build.susp.offR : build.susp.offF) / 1000;
@@ -86,10 +89,13 @@ export class Car {
     }
     for (const st of this.struts) {
       const { ax, side } = st.userData, xa = ax ? S.xr : S.xf, w = this.wheels.find(p => p.userData.ax === ax && p.userData.side === side);
-      const z = w.userData.zc - w.userData.width / 2 - 0.09, base = S.R * 0.75, top = S.wcY + S.Ra + 0.03 - drop;
-      st.position.set(xa, base, side * z); st.scale.y = Math.max(0.2, top - base); st.rotation.x = side * 0.14;
+      const z = w.userData.zc - w.userData.width / 2 - 0.09, base = S.R * 0.75, top = S.wcY + S.Ra + 0.03 - (ax ? dropR : dropF);
+      st.position.set(xa, base, side * z); st.scale.y = Math.max(0.12, top - base); st.rotation.x = side * 0.14;
     }
+    this.body.position.y = -this.drop;
   }
+
+  dispose() { disposeTree(this.root); }
 
   setXray(on) {
     this.xray = on;
@@ -128,7 +134,7 @@ export class Car {
     this.roll += (target - this.roll) * Math.min(1, dt * 9);
     const shake = running ? Math.sin(this.time * (20 + k * 90)) * 0.0007 * (1.2 - k) : 0;
     this.body.rotation.x = this.roll + shake * 1.5 + this.dynRoll;
-    this.body.rotation.z = this.dynPitch;
+    this.body.rotation.z = (this.rake || 0) + this.dynPitch;
     this.body.position.y = -this.drop + shake;
     // flames
     this.flameT = Math.max(0, this.flameT - dt * 8);

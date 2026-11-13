@@ -1,13 +1,15 @@
 // APEX GARAGE — application entry point.
 import * as THREE from 'three';
-import { CARS, SUSPENSIONS, byId, defaultBuild } from './data.js';
+import { CARS, SUSPENSIONS, AIR_PRESETS, airPresetHeight, slamHeight, defaultAir, byId, defaultBuild } from './data.js';
 import { createStage } from './scene.js';
 import { createMaterials, applyAppearance } from './materials.js';
 import { Car } from './car.js';
 import { EngineAudio } from './audio.js';
-import { computeStats, buildSheet, resolve, maxDrop, slamDrop } from './stats.js';
+import { computeStats, buildSheet, resolve, maxDrop } from './stats.js';
 import { initUI } from './ui.js';
-import { Drive, TRANSMISSIONS } from './drive.js';
+import { Drive, TRANSMISSIONS, DRIVE_MODES, CUSTOM_DEFAULT } from './drive.js';
+import { Net } from './net.js';
+import { RemoteCars } from './remote.js';
 import { WORLDS } from './world.js';
 import { Records } from './score.js';
 
@@ -24,7 +26,7 @@ const drive = new Drive(stage, car, audio);
 const app = {
   build: defaultBuild(CARS[0]),
   toggles: { xray: false, lights: false, turntable: false, dyno: false },
-  aired: false, slot: null, driving: false,
+  slot: null, driving: false,
   car: () => byId(CARS, app.build.carId),
   stats: () => computeStats(app.build),
   stockStats: () => computeStats(defaultBuild(app.car())),
@@ -32,26 +34,43 @@ const app = {
   statsFor: b => computeStats(b),
 };
 
+const PREF = 'apex-garage-drive-v1';
+const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREF)) || {}; } catch (_) { return {}; } })();
+const savePrefs = () => { try { localStorage.setItem(PREF, JSON.stringify(prefs)); } catch (_) { /* ignore */ } };
+
 // ---- engine state
 const eng = { running: false, cranking: 0, rpm: 0, throttle: 0, input: 0, cut: 0, boost: 0 };
-let airOffset = 0, stats = app.stats();
+let stats = app.stats();
+
+// ---- ride height. Air suspension has separate front / rear heights that glide to their targets.
+const ride = { f: 0, r: 0, moving: false };
+const hasAir = () => !!byId(SUSPENSIONS, app.build.susp.type).air;
+/** Where the suspension is heading: metres below stock at the front and rear. */
+function rideTarget(speed = 0) {
+  const su = app.build.susp;
+  if (!hasAir()) return { f: su.drop, r: su.drop };
+  const a = su.air || (su.air = defaultAir());
+  // Show mode lays the car out when parked and lifts it just clear of the road once it rolls
+  const lim = a.preset === 'show' && speed > 2.5 ? slamHeight(app.car()) - 0.022 : Infinity;
+  return { f: Math.min(a.f, lim), r: Math.min(a.r, lim) };
+}
+const snapRide = () => { const t = rideTarget(); ride.f = t.f; ride.r = t.r; };
 
 function rebuild() {
   car.build(app.build);
   applyAppearance(M, app.build);
-  car.applyStance(app.build, currentDrop());
+  snapRide(); car.applyStance(app.build, ride.f, ride.r);
   const S = car.S;
   stage.blob.scale.set(S.car.dims.L * 1.12, S.car.dims.W * 1.35, 1);
   audio.configure(resolve(app.build));
 }
-const currentDrop = () => app.build.susp.drop + airOffset;
 
 /** Apply a mutation to the build. level: 'rebuild' | 'look' | 'stance'. */
 app.change = (fn, level = 'rebuild', rerender = true) => {
   fn(app.build);
   if (level === 'rebuild') rebuild();
   else if (level === 'look') applyAppearance(M, app.build);
-  else car.applyStance(app.build, currentDrop());
+  else { if (!hasAir()) snapRide(); car.applyStance(app.build, ride.f, ride.r); }
   stats = app.stats();
   ui.refresh(rerender);
 };
@@ -59,7 +78,7 @@ app.change = (fn, level = 'rebuild', rerender = true) => {
 app.selectCar = id => {
   if (id === app.build.carId) return;
   stopEngine(); app.slot = null;
-  app.build = defaultBuild(byId(CARS, id)); app.aired = false; airOffset = 0;
+  app.build = defaultBuild(byId(CARS, id));
   rebuild(); stats = app.stats(); ui.refresh(); app.view('q');
   ui.toast(`${app.car().brand} ${app.car().name} rolled in`);
 };
@@ -89,10 +108,25 @@ app.toggle = name => {
   ui.refresh(false);
 };
 
-app.toggleAir = () => {
-  app.aired = !app.aired;
-  if (audio.ensure()) audio._burst({ dur: app.aired ? 0.9 : 0.6, f0: app.aired ? 5200 : 2400, f1: app.aired ? 1200 : 4200, q: 0.9, gain: 0.16 });
+// ---- air suspension presets (work in the garage and while driving)
+const airStore = () => (prefs.air = prefs.air || {});
+const hiss = up => { if (audio.ensure()) audio._burst({ dur: up ? 0.7 : 1.0, f0: up ? 2400 : 5200, f1: up ? 4400 : 1200, q: 0.9, gain: 0.15 }); };
+app.rideInfo = () => { const c = app.car(); return { f: Math.round((c.gc - ride.f) * 1000), r: Math.round((c.gc - ride.r) * 1000), preset: hasAir() ? (app.build.susp.air || defaultAir()).preset : null }; };
+app.setAirPreset = id => {
+  if (!hasAir()) return false;
+  const p = byId(AIR_PRESETS, id), a = app.build.susp.air || (app.build.susp.air = defaultAir()), h = airPresetHeight(app.car(), p.id);
+  hiss(h < (a.f + a.r) / 2); a.preset = p.id; a.f = a.r = h;
+  airStore()[app.build.carId] = { ...a }; savePrefs(); stats = app.stats();
+  if (!app.driving) ui.refresh();
+  return p;
 };
+app.setAirHeight = (axle, metres) => {
+  if (!hasAir()) return;
+  const a = app.build.susp.air || (app.build.susp.air = defaultAir());
+  a[axle] = metres; a.preset = 'custom'; airStore()[app.build.carId] = { ...a }; savePrefs(); stats = app.stats(); ui.refresh(false);
+};
+/** Called when air suspension is fitted: bring back this car's last air settings. */
+app.restoreAir = build => { const saved = airStore()[build.carId]; build.susp.air = saved ? { ...defaultAir(), ...saved } : defaultAir(); };
 
 // ---- saved cars (any number, stored in this browser)
 const readSaves = () => {
@@ -123,7 +157,7 @@ app.loadSave = id => {
   stopEngine();
   const base = defaultBuild(byId(CARS, s.build.carId));
   app.build = { ...base, ...s.build, paint: { ...base.paint, ...s.build.paint }, rim: { ...base.rim, ...s.build.rim }, susp: { ...base.susp, ...s.build.susp } };
-  app.aired = false; airOffset = 0; app.slot = id;
+  app.slot = id;
   rebuild(); stats = app.stats(); ui.refresh(); ui.toast(`Loaded “${s.name}”`);
 };
 app.deleteSave = id => { const list = readSaves().filter(s => s.id !== id); if (writeSaves(list)) { if (app.slot === id) app.slot = null; ui.refresh(); ui.toast('Save deleted'); } };
@@ -131,14 +165,13 @@ app.renameSave = (id, name) => { const list = readSaves(), s = list.find(x => x.
 
 // ---- drive mode
 const keys = {};
-const hud = { root: $('driveHud'), speed: $('hudSpeed'), gear: $('hudGear'), lap: $('hudLap'), last: $('hudLast'), best: $('hudBest'), laps: $('hudLaps'), place: $('hudPlace'),
+const net = new Net(), remotes = new RemoteCars(net);
+const hud = { air: $('hudAir'), mp: $('hudMp'), root: $('driveHud'), speed: $('hudSpeed'), gear: $('hudGear'), lap: $('hudLap'), last: $('hudLast'), best: $('hudBest'), laps: $('hudLaps'), place: $('hudPlace'),
   score: $('hudScore'), mult: $('hudMult'), bar: $('hudComboBar'), drift: $('hudDrift'), pb: $('hudPb'), feed: $('hudFeed'), trans: $('hudTrans'), gearBox: $('hudGearBox') };
 const fmtLap = t => t ? `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}` : '—:——.——';
 const num = v => Math.round(v).toLocaleString('en-US');
-const PREF = 'apex-garage-drive-v1';
-const prefs = (() => { try { return JSON.parse(localStorage.getItem(PREF)) || {}; } catch (_) { return {}; } })();
-const savePrefs = () => { try { localStorage.setItem(PREF, JSON.stringify(prefs)); } catch (_) { /* ignore */ } };
 drive.setTransmission(prefs.trans || 'auto');
+drive.setCustom(prefs.custom || {}); drive.setMode(prefs.mode || 'sport');
 let boardWorld = prefs.world || 'highway';
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -150,17 +183,78 @@ function renderDriveMenu() {
   }));
   trans.replaceChildren(...TRANSMISSIONS.map(t => { const b = el('button', 'chip' + (drive.trans === t.id ? ' on' : ''), t.name); b.title = t.desc; b.onclick = () => { app.setTransmission(t.id); renderDriveMenu(); }; return b; }));
   $('dmTransDesc').textContent = TRANSMISSIONS.find(t => t.id === drive.trans).desc;
+  $('dmModes').replaceChildren(...DRIVE_MODES.map(m => { const b = el('button', 'chip' + (drive.mode.id === m.id ? ' on' : ''), m.name); b.title = m.desc; b.onclick = () => { app.setMode(m.id); renderDriveMenu(); }; return b; }));
+  $('dmModeDesc').textContent = DRIVE_MODES.find(m => m.id === drive.mode.id).desc;
+  const CUSTOM = [['steer', 'Steering response'], ['thr', 'Throttle response'], ['tc', 'Traction control'], ['esc', 'Stability control'], ['stiff', 'Suspension stiffness'], ['brake', 'Brake strength'], ['drift', 'Drift assist']];
+  $('dmCustom').replaceChildren(...(drive.mode.id !== 'custom' ? [] : CUSTOM.map(([k, label]) => {
+    const wrap = el('div', 'slider'), top = el('div', 'slider-top'), out = el('b', '', drive.custom[k] + '%'), inp = document.createElement('input');
+    top.append(el('span', '', label), out); Object.assign(inp, { type: 'range', min: 0, max: 100, step: 5, value: drive.custom[k] }); inp.setAttribute('aria-label', label);
+    inp.oninput = () => { out.textContent = inp.value + '%'; drive.setCustom({ [k]: +inp.value }); prefs.custom = { ...drive.custom }; savePrefs(); };
+    wrap.append(top, inp); return wrap;
+  })));
   tabs.replaceChildren(...WORLDS.map(w => { const b = el('button', 'chip' + (boardWorld === w.id ? ' on' : ''), w.name); b.onclick = () => { boardWorld = w.id; renderDriveMenu(); }; return b; }));
-  const me = Records.name(), rows = Records.board(boardWorld);
+  { const b = el('button', 'chip' + (boardWorld === 'online' ? ' on' : ''), 'Online'); b.title = 'All-time best multiplayer runs on this server'; b.onclick = () => { boardWorld = 'online'; renderDriveMenu(); }; tabs.append(b); }
+  const me = Records.name(), online = boardWorld === 'online';
+  const rows = online ? (net.top || []).map(r => ({ name: r.name, score: r.score, car: (CARS.find(c => c.id === r.car) || { name: r.car }).name })) : Records.board(boardWorld);
   board.replaceChildren(...rows.map((r, i) => {
     const tr = el('tr', r.target ? 'target' : r.name === me ? 'me' : '');
     tr.append(el('td', '', String(i + 1)), el('td', '', r.name), el('td', '', r.car), el('td', '', num(r.score))); return tr;
   }));
-  if (!rows.some(r => !r.target)) { const tr = el('tr', 'empty'), td = el('td', '', 'No runs recorded yet — go and set one.'); td.colSpan = 4; tr.append(td); board.append(tr); }
+  $('dmClear').hidden = online;
+  if (!rows.some(r => !r.target)) { const tr = el('tr', 'empty'), td = el('td', '', online ? (net.connected ? 'No multiplayer runs on this server yet.' : 'Connect to a multiplayer server to see its all-time board.') : 'No runs recorded yet — go and set one.'); td.colSpan = 4; tr.append(td); board.append(tr); }
   $('dmName').value = me;
 }
 app.setTransmission = id => { drive.setTransmission(id); prefs.trans = drive.trans; savePrefs(); hud.trans.textContent = TRANSMISSIONS.find(t => t.id === drive.trans).name; };
-app.openDriveMenu = () => { renderDriveMenu(); $('driveMenu').classList.add('show'); };
+app.setMode = id => { const m = drive.setMode(id); prefs.mode = m.id; savePrefs(); return m; };
+app.openDriveMenu = () => { renderDriveMenu(); $('driveMenu').classList.add('show'); if (!net.connected && location.protocol !== 'file:') mpConnect(true); else if (net.connected) net.lobbies(); };
+
+// ---- multiplayer (real connections to server.js; see net.js)
+const mpStatus = t => { $('mpStatus').textContent = t; };
+const myBuild = () => JSON.parse(JSON.stringify(app.build));
+function renderLobbies(list) {
+  $('mpPrivate').hidden = false;
+  $('mpLobbies').replaceChildren(...(list || []).map(l => {
+    const row = el('div', 'lobby'), b = el('button', 'btn', l.players >= l.max ? 'Full' : 'Join'); b.disabled = l.players >= l.max;
+    b.onclick = () => net.join(l.id, myBuild(), Records.name());
+    row.append(el('b', '', l.name), el('span', '', `${l.players} / ${l.max} players`), b); return row;
+  }));
+}
+async function mpConnect(quiet) {
+  mpStatus('Connecting…');
+  try { await net.connect($('mpUrl').value.trim() || undefined, Records.name()); prefs.mpUrl = $('mpUrl').value.trim(); savePrefs(); mpStatus(`Connected as ${Records.name()}. Pick a lobby, or create a private room and share its code.`); }
+  catch (e) { $('mpLobbies').replaceChildren(); $('mpPrivate').hidden = true; mpStatus(quiet ? 'Multiplayer server not found. Run “node server.js” and open the address it prints (Live Server cannot host multiplayer), or enter a server address.' : e.message); }
+}
+$('mpUrl').value = prefs.mpUrl || '';
+$('mpConnect').addEventListener('click', () => mpConnect(false));
+$('mpCreate').addEventListener('click', () => net.create(myBuild(), Records.name()));
+$('mpJoinCode').addEventListener('click', () => { const c = $('mpCode').value.trim(); if (c.length === 6) net.joinCode(c, myBuild(), Records.name()); else mpStatus('Room codes are six characters.'); });
+const chatLine = (name, text, sys) => { const d = el('div', sys ? 'sys' : ''); if (name) d.append(el('b', '', name + ': ')); d.append(text); $('mpChat').append(d); while ($('mpChat').children.length > 6) $('mpChat').firstChild.remove(); };
+function renderPlayers() {
+  const rows = net.board.rows || [];
+  $('mpPlayers').replaceChildren(...rows.map(r => { const li = el('li', r.id === net.id ? 'me' : ''); li.append(el('span', '', r.name), el('span', '', num(Math.max(r.best, r.score)))); return li; }));
+}
+net.on.lobbies = l => { renderLobbies(l); if (boardWorld === 'online' && $('driveMenu').classList.contains('show')) renderDriveMenu(); };
+net.on.error = m => { mpStatus(m); if (app.driving) feed(m, 0, 'bad'); };
+net.on.joined = m => {
+  app.drive('highway', { net });
+  remotes.clear(); for (const p of net.players.values()) remotes.add(p);
+  hud.mp.hidden = false; $('mpChat').replaceChildren(); $('mpRoomName').textContent = m.room.name; $('mpRoomCode').textContent = m.room.private ? m.room.code : `${m.players.length} / ${m.room.max}`;
+  chatLine('', m.room.private ? `Private room. Share code ${m.room.code} with friends.` : `Joined ${m.room.name}.`, true);
+};
+net.on.in = p => { remotes.add(p); };
+net.on.out = p => { remotes.remove(p.id); };
+net.on.board = () => { renderPlayers(); if (net.room && !net.room.private) $('mpRoomCode').textContent = `${net.board.rows.length} / ${net.room.max}`; };
+net.on.chat = m => chatLine(m.name, m.m);
+net.on.sys = m => chatLine('', m, true);
+net.on.closed = was => { remotes.clear(); hud.mp.hidden = true; if (was && app.driving) feed('Disconnected from the server — carrying on solo', 0, 'bad'); mpStatus('Disconnected.'); };
+drive.score.onBank = res => { if (net.inRoom) net.bank(res.total); };
+const chatInput = $('chatInput');
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { const t = chatInput.value.trim(); if (t) net.chat(t); chatInput.value = ''; chatInput.blur(); $('view').focus(); }
+  else if (e.key === 'Escape') { chatInput.value = ''; chatInput.blur(); $('view').focus(); }
+  e.stopPropagation();
+});
+chatInput.addEventListener('focus', () => { for (const k in keys) keys[k] = false; });
 $('dmName').addEventListener('change', e => { Records.setName(e.target.value); renderDriveMenu(); });
 $('dmClear').addEventListener('click', () => { if (confirm('Clear all saved scores for this map?')) { Records.clear(boardWorld); renderDriveMenu(); } });
 
@@ -172,13 +266,14 @@ const feed = (label, pts, kind) => {
 drive.score.onEvent = e => feed(e.label, e.pts, e.kind);
 drive.onNotice = msg => feed(msg, 0, 'minor');
 
-app.drive = id => {
+app.drive = (id, opts = {}) => {
   $('driveMenu').classList.remove('show');
   if (app.toggles.xray) app.toggle('xray');
   if (app.toggles.turntable) app.toggle('turntable');
-  airOffset = 0; app.aired = false; car.applyStance(app.build, currentDrop());
-  const world = drive.enter(id, stats, car.r);
-  prefs.world = boardWorld = world.id; savePrefs();
+  if (!opts.net && net.inRoom) net.leave();
+  const world = drive.enter(id, stats, car.r, opts);
+  if (opts.net) world.group.add(remotes.group); else { remotes.clear(); hud.mp.hidden = true; }
+  prefs.world = world.id; if (boardWorld !== 'online') boardWorld = world.id; savePrefs();
   app.driving = true; document.body.classList.add('driving');
   hud.place.textContent = world.name; hud.laps.style.display = world.hasLaps ? '' : 'none';
   hud.trans.textContent = TRANSMISSIONS.find(t => t.id === drive.trans).name; hud.feed.replaceChildren();
@@ -189,13 +284,14 @@ app.drive = id => {
 };
 app.exitDrive = () => {
   if (!app.driving) return;
-  const res = drive.exit(); app.driving = false; document.body.classList.remove('driving');
+  const res = drive.exit(); app.driving = false;
+  if (net.inRoom) net.leave(); remotes.clear(); remotes.group.removeFromParent(); hud.mp.hidden = true; document.body.classList.remove('driving');
   for (const k in keys) keys[k] = false;
   eng.throttle = 0; eng.input = 0; eng.rpm = car.r.engine.idle;
-  car.applyStance(app.build, currentDrop()); app.view('q', 0.01);
+  snapRide(); car.applyStance(app.build, ride.f, ride.r); app.view('q', 0.01);
   if (res) ui.toast(`Run banked: ${num(res.total)} pts${res.pb ? ' — new personal best!' : ''}${res.rank ? ` · #${res.rank} on the board` : ''}`);
 };
-app.reset = () => { app.slot = null; app.build = defaultBuild(app.car()); app.aired = false; airOffset = 0; rebuild(); stats = app.stats(); ui.refresh(); ui.toast('Returned to factory spec'); };
+app.reset = () => { app.slot = null; app.build = defaultBuild(app.car()); rebuild(); stats = app.stats(); ui.refresh(); ui.toast('Returned to factory spec'); };
 app.copySheet = () => {
   const s = app.sheet(), st = app.stats();
   const txt = [`APEX GARAGE — ${app.car().brand} ${app.car().name}`, `${Math.round(st.hp)} hp · ${Math.round(st.tq)} Nm · ${Math.round(st.weight)} kg · 0-100 ${st.t100.toFixed(2)} s`, '',
@@ -262,6 +358,9 @@ window.addEventListener('keydown', e => {
     if (e.repeat) return;
     if (e.code === 'Escape') app.exitDrive(); else if (e.code === 'KeyR') drive.respawn(); else if (e.code === 'KeyC') drive.nextCamera(); else if (e.code === 'KeyL') app.toggle('lights');
     else if (e.code === 'KeyE') drive.shift(1, !!keys.ShiftLeft); else if (e.code === 'KeyQ') drive.shift(-1, !!keys.ShiftLeft);
+    else if (e.code === 'KeyM') { const i = DRIVE_MODES.findIndex(m => m.id === drive.mode.id), m = app.setMode(DRIVE_MODES[(i + 1) % DRIVE_MODES.length].id); feed(`${m.name} mode`, 0, 'minor'); }
+    else if (/^Digit[1-4]$/.test(e.code)) { const p = app.setAirPreset(AIR_PRESETS[+e.code.slice(5) - 1].id); feed(p ? `Air suspension: ${p.name}` : 'This car has no air suspension — fit it in the Stance panel', 0, 'minor'); }
+    else if (e.code === 'Enter' && net.inRoom) { e.preventDefault(); keys.Enter = false; chatInput.focus(); }
     else if (e.code === 'KeyT') { const i = TRANSMISSIONS.findIndex(t => t.id === drive.trans); app.setTransmission(TRANSMISSIONS[(i + 1) % TRANSMISSIONS.length].id); feed('Transmission: ' + TRANSMISSIONS.find(t => t.id === drive.trans).name, 0, 'minor'); }
     return;
   }
@@ -285,14 +384,17 @@ requestAnimationFrame(() => $('loader').classList.add('hide'));
 const clock = new THREE.Clock();
 function frame() {
   const dt = Math.min(0.1, clock.getDelta());
-  // air suspension animation
-  const susp = byId(SUSPENSIONS, app.build.susp.type);
-  const airTarget = susp.air && app.aired ? Math.max(0, slamDrop(app.car()) - app.build.susp.drop) : 0;
-  if (Math.abs(airTarget - airOffset) > 1e-4) {
-    airOffset += Math.sign(airTarget - airOffset) * Math.min(Math.abs(airTarget - airOffset), dt * 0.06);
-    car.applyStance(app.build, currentDrop());
-  }
+  // suspension glides to its target height (air presets, sliders, Show mode lifting off the ground)
+  const tgt = rideTarget(app.driving ? Math.abs(drive.s.vx) : 0), stepH = dt * 0.075;
+  if (Math.abs(tgt.f - ride.f) > 1e-4 || Math.abs(tgt.r - ride.r) > 1e-4) {
+    ride.f += Math.sign(tgt.f - ride.f) * Math.min(Math.abs(tgt.f - ride.f), stepH);
+    ride.r += Math.sign(tgt.r - ride.r) * Math.min(Math.abs(tgt.r - ride.r), stepH);
+    car.applyStance(app.build, ride.f, ride.r); ride.moving = true;
+    const ro = $('airReadout'); if (ro) { const i = app.rideInfo(); ro.textContent = `Front ${i.f} mm · Rear ${i.r} mm`; }
+  } else ride.moving = false;
   if (app.driving) {
+    const air = hasAir() ? app.build.susp.air : null;
+    drive.setRide(ride.f, ride.r, air && air.preset !== 'custom' ? byId(AIR_PRESETS, air.preset) : null);
     const d = drive.update(dt, {
       fwd: keys.KeyW || keys.ArrowUp ? 1 : 0, back: keys.KeyS || keys.ArrowDown ? 1 : 0,
       steer: (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0), hand: keys.Space ? 1 : 0, clutch: keys.ShiftLeft ? 1 : 0,
@@ -300,6 +402,13 @@ function frame() {
     eng.rpm = d.rpm; eng.throttle = d.throttle; eng.boost = d.boost;
     car.update(dt, eng.rpm, 0, true, false, stats.redline);
     hud.speed.textContent = Math.round(d.kmh); hud.gear.textContent = d.gear;
+    hud.trans.textContent = `${TRANSMISSIONS.find(t => t.id === d.trans).name} · ${d.mode}`;
+    if (air) { const i = app.rideInfo(); hud.air.textContent = `Air: ${air.preset === 'custom' ? 'Custom' : byId(AIR_PRESETS, air.preset).name} · ${i.f} / ${i.r} mm${d.scrape > 0.3 ? ' · scraping' : ''}`; } else hud.air.textContent = '';
+    if (net.inRoom) {
+      drive.justReset = Math.max(0, (drive.justReset || 0) - dt);
+      net.sendState(drive.s, d.rpm, d.score, ((keys.KeyS || keys.ArrowDown) ? 1 : 0) | 2 | (drive.justReset > 0 ? 4 : 0));
+      remotes.update(dt);
+    }
     hud.gearBox.classList.toggle('shift', d.shiftUp); hud.gearBox.classList.toggle('clutch', !!d.clutch);
     hud.score.textContent = num(d.score); hud.mult.textContent = '×' + d.mult.toFixed(1); hud.mult.classList.toggle('hot', d.mult > 1);
     hud.bar.style.width = Math.max(0, d.comboT * 100) + '%'; hud.pb.textContent = num(Math.max(d.best, d.score));
@@ -317,4 +426,4 @@ function frame() {
 frame();
 
 // handy for tinkering from the DevTools console
-window.apex = { app, car, stage, audio, eng, drive, keys, maxDrop, Records };
+window.apex = { app, car, stage, audio, eng, drive, keys, maxDrop, Records, net, remotes, ride };
