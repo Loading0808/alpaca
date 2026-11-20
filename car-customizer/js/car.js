@@ -7,6 +7,7 @@ import { buildWheel, buildStrut } from './wheels.js';
 import { buildEngine, buildExhaust } from './engine3d.js';
 import { resolve } from './stats.js';
 import { Chute } from './chute.js';
+import { Cockpit } from './cockpit.js';
 import { disposeTree, clamp } from './geo.js';
 
 const DEG = Math.PI / 180;
@@ -25,6 +26,7 @@ export class Car {
 
   build(build) {
     const M = this.M, r = resolve(build), car = r.car;
+    if (this.cockpit) { this.cockpit.dispose(); this.cockpit = null; }
     disposeTree(this.body); this.body.clear();
     for (const w of [...this.wheels, ...this.struts]) { disposeTree(w); this.root.remove(w); }
     this.wheels = []; this.struts = []; this.flames = [];
@@ -32,6 +34,7 @@ export class Car {
 
     // shell, details, kit
     this.shell = new THREE.Group(); buildShell(S, M).forEach(m => this.shell.add(m)); this.body.add(this.shell);
+    this.tray = this.shell.children.find(m => m.name === 'interior');   // the lid over the cabin at belt height (hidden in cockpit view)
     this.details = buildDetails(S, M, build, r.exhaust); this.body.add(this.details);
     this.kit = buildKit(S, M, r.kit, build.spoiler); this.body.add(this.kit);
 
@@ -53,6 +56,10 @@ export class Car {
     // drag parachute: pack on the body, canopy on the car root so it trails level behind
     if (this.chute) { disposeTree(this.chute.group); this.root.remove(this.chute.group); }
     this.chute = new Chute(S, build); this.body.add(this.chute.pack); this.root.add(this.chute.group);
+
+    // driver's cockpit (dashboard, steering wheel, instruments) and camera attachment points.
+    // Other players' cars are never seen from inside, so they skip it.
+    if (!this.lite) { this.cockpit = new Cockpit(S, M); this.body.add(this.cockpit.group); }
 
     // exhaust flames
     const fg = new THREE.ConeGeometry(this.details.userData.tipRadius * 1.15, 0.5, 12, 1, true); fg.rotateZ(Math.PI / 2); fg.translate(-0.25, 0, 0);
@@ -104,6 +111,7 @@ export class Car {
 
   setXray(on) {
     this.xray = on;
+    if (this.cockpit) this.cockpit.group.visible = !on;          // the cabin lining would hide the drivetrain
     const solid = o => { for (let p = o; p && p !== this.body; p = p.parent) if (p.userData.solid) return true; return false; };
     this.body.traverse(o => {
       if (!o.isMesh || solid(o)) return;

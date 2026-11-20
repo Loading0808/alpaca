@@ -62,10 +62,17 @@ export function customMode(c) {
     rollF: L(0.03, -0.04, u('stiff')), roll: L(1.4, 0.5, u('stiff')), brake: L(0.85, 1.15, u('brake')), shift: 0.8, rear: L(1.02, 0.9, u('drift')), drift: u('drift') };
 }
 
+// Camera modes, cycled with C. Third-person has three distances of its own (B).
+export const CAMERA_MODES = [{ id: 'chase', name: 'Third-person' }, { id: 'cockpit', name: 'Cockpit' }, { id: 'hood', name: 'Hood' }];
+export const CHASE_VIEWS = [{ id: 'far', name: 'Far' }, { id: 'near', name: 'Near' }, { id: 'top', name: 'Overhead' }];
+const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _up = new THREE.Vector3(), _m = new THREE.Matrix3();
+
 export class Drive {
   constructor(stage, car, audio) {
     this.stage = stage; this.car = car; this.audio = audio;
-    this.worlds = {}; this.active = false; this.camMode = 0; this.trans = 'auto';
+    this.worlds = {}; this.active = false; this.camMode = 0; this.chaseView = 0; this.trans = 'auto';
+    this.camFrom = 0; this.camT = 1; this.poseCam = new THREE.PerspectiveCamera(); this.sway = new THREE.Vector3(); this.cockpitW = 0;
+    this.poses = CAMERA_MODES.map(() => ({ pos: new THREE.Vector3(), quat: new THREE.Quaternion(), fov: 60 }));
     this.camPos = new THREE.Vector3(); this.camHead = 0; this.shake = 0;
     this.score = new Score(); this.onNotice = null;
     this.mode = DRIVE_MODES[1]; this.custom = { ...CUSTOM_DEFAULT };
@@ -170,6 +177,7 @@ export class Drive {
     this.score.reset(world.id, `${c.brand} ${c.name}`);
     if (this.traffic && !this.traffic.sync) this.traffic.reset(world.surface(this.s.x, this.s.z).s);
     this.lightsWere = car.lights; car.setLights(world.night);
+    this.glassBase = car.M.glass.opacity; this.camT = 1; this.cockpitW = 0; this.sway.set(0, 0, 0); this.rig = car.cockpit ? car.cockpit.rig : null;
     if (car.engine) car.engine.visible = false;                  // hidden under the bodywork while driving: fewer draw calls
     this.audio.setReverb(world.night ? 0.12 : 0.04);
     this.camHead = this.s.psi; this.camPos.set(this.s.x - Math.cos(this.s.psi) * 8, 3, this.s.z + Math.sin(this.s.psi) * 8);
@@ -188,6 +196,7 @@ export class Drive {
     car.root.position.set(0, 0.05, 0); car.root.rotation.set(0, 0, 0); car.dynRoll = car.dynPitch = 0;
     for (const p of car.wheels) p.rotation.y = 0;
     car.setLights(this.lightsWere); if (car.engine) car.engine.visible = true;
+    car.M.glass.opacity = this.glassBase; if (car.cockpit) car.cockpit.setSteer(0); if (car.tray) car.tray.visible = true;
     car.chute.update(0, 0, 0, false); this.race = null;
     this.audio.setRoad(0, 0, 0); this.audio.setReverb(0.22);
     return res;
@@ -195,7 +204,16 @@ export class Drive {
 
   place(p) { Object.assign(this.s, { x: p.x, z: p.z, psi: p.psi, vx: 0, vy: 0, r: 0, gear: 1, st: 0, driftT: 0, boost: 0 }); }
   respawn() { this.place(this.world.respawn()); this.score.wall(); this.justReset = 0.4; if (this.chute.state !== 'none') { this.chute.state = 'packed'; this.chute.open = 0; } if (this.race) { this.race.reset(); this.world.clearBoards(); } }
-  nextCamera() { this.camMode = (this.camMode + 1) % 4; }
+  /** Cycle Third-person → Cockpit → Hood. The view glides from the old pose to the new one. Returns the new mode. */
+  nextCamera() { return this.setCamera((this.camMode + 1) % CAMERA_MODES.length); }
+  setCamera(i, instant = false) {
+    i = ((i % CAMERA_MODES.length) + CAMERA_MODES.length) % CAMERA_MODES.length;
+    if (i !== this.camMode) { this.camFrom = this.camMode; this.camMode = i; this.camT = instant || !this.active ? 1 : 0; }
+    return CAMERA_MODES[i];
+  }
+  /** Third-person distance: Far → Near → Overhead. Switches to third-person if another camera is in use. */
+  nextChaseView() { if (this.camMode !== 0) this.setCamera(0); else { this.camFrom = 0; this.camT = 0; this.prevChase = this.chaseView; this.chaseView = (this.chaseView + 1) % CHASE_VIEWS.length; } return CHASE_VIEWS[this.chaseView]; }
+  cameraLabel() { return CAMERA_MODES[this.camMode].name + (this.camMode === 0 ? ' · ' + CHASE_VIEWS[this.chaseView].name : ''); }
   setTransmission(id) { this.trans = TRANSMISSIONS.some(t => t.id === id) ? id : 'auto'; if (this.active && this.trans === 'auto' && this.s.gear === 0) this.s.gear = 1; }
 
   /** Gear change request from the player (semi-automatic and manual). dir = +1 / -1. */
@@ -474,6 +492,7 @@ export class Drive {
     const fwdDot = surf.tx !== undefined ? Math.cos(s.psi) * surf.tx - Math.sin(s.psi) * surf.tz : 0;
     car.root.position.set(s.x, s.y, s.z); car.root.rotation.set(0, s.psi, Math.atan((surf.slope || 0) * fwdDot));
     const roll = s.vx / P.R * dt;
+    if (car.cockpit) car.cockpit.setSteer(s.steer);
     car.setWheels(s.steer, s.lockF ? 0 : roll + (P.split > 0 ? this.spin[0] * 25 * dt : 0), inp.hand || s.lockR ? 0 : roll + (P.split < 1 ? this.spin[1] * 25 * dt : 0));
     const rollK = this.mode.roll * (this.ride.preset ? this.ride.preset.roll : 1);
     car.dynRoll += (clamp(s.ay * 0.0055 * rollK, -0.09, 0.09) - car.dynRoll) * Math.min(1, dt * 8);
@@ -489,39 +508,82 @@ export class Drive {
     if (!!surf.tunnel !== this.inTun) { this.inTun = !!surf.tunnel; this.audio.setReverb(this.inTun ? 0.5 : 0.12); }
 
     this._camera(dt);
+    if (car.cockpit && this.cockpitW > 0) car.cockpit.update(dt, { kmh, rpm: s.rpm, redline: P.redline, gear: s.gear === -1 ? 'R' : s.gear === 0 ? 'N' : String(s.gear), shift: s.rpm > P.redline * 0.93 && s.gear >= 1 && s.gear < 6 });
     const sc = this.score;
     return {
       rpm: s.rpm, throttle: s.thr, boost: P.tg ? s.boost : aBoost, kmh, gear: s.gear === -1 ? 'R' : s.gear === 0 ? 'N' : String(s.gear), shiftUp: s.rpm > P.redline * 0.93 && s.gear >= 1 && s.gear < 6,
-      lap: this.lap, time: this.time, hasLaps: world.hasLaps, trans: this.trans, clutch: this.trans === 'manual' && inp.clutch,
+      camera: this.cameraLabel(), lap: this.lap, time: this.time, hasLaps: world.hasLaps, trans: this.trans, clutch: this.trans === 'manual' && inp.clutch,
       drag: dragInfo, mode: this.mode.name, scrape: s.scrape || 0, assists: this.assists(), active: { abs: s.absOn > 0, tcs: s.tcsOn > 0, esp: s.espOn > 0 }, locked: s.lockF || s.lockR,
       lc: this.setup.lc, lcHold: s.lcHold, chute: this.chute.state, chuteOpen: this.chute.open, boostPsi: P.boostPsi, boostLimited: P.boostLimited,
       score: sc.score, mult: sc.mult, comboT: sc.comboT / 6, drift: sc.drift, best: sc.best, drifting: s.driftT > 0,
     };
   }
 
+  /** Body-local point → world, using the car body's current transform (so roll, pitch and ride height follow). */
+  _bodyPoint(p, out) { return out.copy(p).applyMatrix4(this.car.body.matrixWorld); }
+  /** Point a pose at a world target with a given up vector. */
+  _aim(pose, target, up) { const c = this.poseCam; c.position.copy(pose.pos); c.up.copy(up); c.lookAt(target); pose.quat.copy(c.quaternion); }
+
   _camera(dt) {
-    const s = this.s, cam = this.stage.camera, v = Math.hypot(s.vx, s.vy), H = this.car.S.H;
-    const fx = Math.cos(s.psi), fz = -Math.sin(s.psi);
+    const s = this.s, cam = this.stage.camera, v = Math.hypot(s.vx, s.vy), car = this.car, rig = this.rig;
+    const cfg = rig ? rig.cfg : null, fx = Math.cos(s.psi), fz = -Math.sin(s.psi);
+    car.root.updateMatrixWorld(true);
+    _m.setFromMatrix4(car.body.matrixWorld); const bodyUp = _up.set(0, 1, 0).applyMatrix3(_m).normalize();
     this.shake = Math.max(0, this.shake - dt * 1.6);
     const jx = (Math.random() - 0.5) * this.shake * 0.5, jy = (Math.random() - 0.5) * this.shake * 0.4;
-    let fov = 58 + Math.min(20, v * 0.2);
-    if (this.camMode === 2) {                                   // hood
-      cam.position.set(s.x + fx * 0.75 + jx, s.y + H * 0.92 + jy, s.z + fz * 0.75); cam.lookAt(s.x + fx * 30, s.y + H * 0.7, s.z + fz * 30); fov = 70 + Math.min(14, v * 0.16);
-    } else if (this.camMode === 3) {                            // top-down
-      cam.position.set(s.x - fx * 6, s.y + 46 + v * 0.5, s.z - fz * 6); cam.lookAt(s.x + fx * 8, s.y, s.z + fz * 8); fov = 50;
+    const [chase, cock, hood] = this.poses, worldUp = new THREE.Vector3(0, 1, 0);
+
+    // ---- third-person: the existing chase camera, trailing the direction of travel so slides are visible
+    const cv = CHASE_VIEWS[this.chaseView].id;
+    if (cv === 'top') {
+      chase.pos.set(s.x - fx * 6, s.y + 46 + v * 0.5, s.z - fz * 6); this._aim(chase, _w.set(s.x + fx * 8, s.y, s.z + fz * 8), worldUp); chase.fov = 50;
     } else {
-      // chase camera trails the direction of travel, so slides are visible
       const want = s.psi + (v > 4 && s.vx > 0 ? Math.atan2(s.vy, s.vx) * 0.55 : 0);
       let dh = want - this.camHead; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
       this.camHead += dh * Math.min(1, dt * (4.5 + v * 0.05));
       // with the parachute out the camera drops back and climbs so the canopy stays in shot
       const co = this.chute.state === 'open' ? Math.min(1, this.chute.open) : 0; this.camChute = (this.camChute || 0) + (co - (this.camChute || 0)) * Math.min(1, dt * 2.5);
-      const dist = (this.camMode === 1 ? 4.6 : 6.6) + v * 0.02 + this.camChute * 8.5, up = (this.camMode === 1 ? 1.35 : 2.25) + this.camChute * 2.4;
+      const V = (cfg ? cfg.chase : { views: { far: { dist: 6.6, height: 2.25 }, near: { dist: 4.6, height: 1.35 } } }).views[cv];
+      const dist = V.dist + v * 0.02 + this.camChute * 8.5, up = V.height + this.camChute * 2.4;
       const tx = s.x - Math.cos(this.camHead) * dist, tz = s.z + Math.sin(this.camHead) * dist;
       this.camPos.x += (tx - this.camPos.x) * Math.min(1, dt * 12); this.camPos.z += (tz - this.camPos.z) * Math.min(1, dt * 12);
       this.camPos.y += (s.y + up - this.camPos.y) * Math.min(1, dt * 7);
-      cam.position.copy(this.camPos); cam.position.x += jx; cam.position.y += jy; cam.lookAt(s.x + fx * 2.2, s.y + 0.95, s.z + fz * 2.2);
+      chase.pos.copy(this.camPos); chase.pos.x += jx; chase.pos.y += jy; this._aim(chase, _w.set(s.x + fx * 2.2, s.y + 0.95, s.z + fz * 2.2), worldUp);
+      chase.fov = 58 + Math.min(20, v * 0.2);
     }
-    if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 4); cam.updateProjectionMatrix(); }
+
+    if (rig) {
+      // ---- cockpit: the driver's eye, attached to the body so it rolls and pitches with the car.
+      // The head is thrown against acceleration (back under power, forward under braking, outwards in
+      // corners), a little road vibration rises with speed, and the view leans into the turn.
+      const ck = cfg.cockpit, k = ck.sway;
+      const want = _v.set(clamp(-s.ax * 0.0035, -0.035, 0.035), Math.sin(this.time * (9 + v * 0.35)) * 0.0016 * Math.min(1, v / 30) * k, clamp(s.ay * 0.0032, -0.03, 0.03)).multiplyScalar(k);
+      this.sway.lerp(want, Math.min(1, dt * 7));
+      this._bodyPoint(_v.copy(rig.eye).add(this.sway), cock.pos); cock.pos.x += jx * 0.3; cock.pos.y += jy * 0.3;
+      this._bodyPoint(_v.set(rig.eye.x + 20, rig.eye.y - 20 * ck.lookDown, rig.eye.z - s.steer * 7 * k), _w);
+      this._aim(cock, _w, bodyUp); cock.fov = ck.fov + Math.min(ck.fovMax, v * ck.fovPerMs);
+
+      // ---- hood: just above the bonnet, ahead of the windscreen. It follows pitch fully and most of the roll.
+      const hd = cfg.hood;
+      this._bodyPoint(rig.hood, hood.pos); hood.pos.x += jx * 0.4; hood.pos.y += jy * 0.4;
+      this._bodyPoint(rig.hoodLook, _w);
+      this._aim(hood, _w, _v.copy(worldUp).lerp(bodyUp, hd.rollFollow).normalize()); hood.fov = hd.fov + Math.min(hd.fovMax, v * hd.fovPerMs);
+    } else { cock.pos.copy(chase.pos); cock.quat.copy(chase.quat); cock.fov = chase.fov; hood.pos.copy(chase.pos); hood.quat.copy(chase.quat); hood.fov = chase.fov; }
+
+    // ---- glide between the old and the new camera; both keep tracking the car during the move
+    const to = this.poses[this.camMode];
+    let fov;
+    if (this.camT < 1) {
+      this.camT = Math.min(1, this.camT + dt / (cfg ? cfg.blend : 0.5));
+      const t = this.camT * this.camT * (3 - 2 * this.camT), from = this.poses[this.camFrom];
+      cam.position.lerpVectors(from.pos, to.pos, t); cam.quaternion.slerpQuaternions(from.quat, to.quat, t); fov = from.fov + (to.fov - from.fov) * t;
+      this.cockpitW = (this.camFrom === 1 ? 1 - t : 0) + (this.camMode === 1 ? t : 0);
+    } else { cam.position.copy(to.pos); cam.quaternion.copy(to.quat); fov = to.fov; this.cockpitW = this.camMode === 1 ? 1 : 0; }
+
+    // from inside, tinted glass is much easier to see through than from outside
+    car.M.glass.opacity = this.glassBase + (Math.min(this.glassBase, 0.16) - this.glassBase) * this.cockpitW;
+    if (car.tray) car.tray.visible = this.cockpitW < 0.5;
+    if (Math.abs(cam.fov - fov) > 0.05) { cam.fov += (fov - cam.fov) * Math.min(1, dt * 6); cam.updateProjectionMatrix(); }
   }
+
 }

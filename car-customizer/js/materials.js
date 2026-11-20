@@ -61,6 +61,7 @@ export function createMaterials() {
   const M = {
     paint: phys({ color: '#888', side: DS, clearcoat: 1, clearcoatRoughness: 0.04, envMapIntensity: 1.25 }),
     roof: phys({ color: '#888', side: DS, clearcoat: 1, clearcoatRoughness: 0.04 }),
+    gpaint: phys({ color: '#888', side: DS }),                     // pillar paint: copy of paint, outside faces only (see body.js)
     glass: phys({ color: '#06080a', side: DS, roughness: 0.03, metalness: 0, transparent: true, opacity: 0.8, envMapIntensity: 1.4 }),
     trim: phys({ color: '#050506', side: DS, roughness: 0.2, clearcoat: 1 }),
     under: std({ color: '#0a0a0b', side: DS, roughness: 0.95 }),
@@ -128,6 +129,8 @@ export function applyAppearance(M, build) {
   if (build.roof === 'black') { M.roof.color.set('#060607'); Object.assign(M.roof, FIN.gloss); M.roof.roughness = 0.2; }
   if (build.roof === 'carbon') { M.roof.color.set('#ffffff'); M.roof.map = M._carbonMap; Object.assign(M.roof, { metalness: 0.2, roughness: 0.3, clearcoat: 1, iridescence: 0 }); }
   M.roof.needsUpdate = true; M.paint.needsUpdate = true;
+  M.gpaint.copy(M.paint); M.gpaint.side = M.gpaintSide ?? THREE.DoubleSide; M.gpaint.needsUpdate = true;
+  M.roof.side = M.gpaintSide ?? THREE.DoubleSide;                // the roof, too, is only painted on the outside
 
   M.glass.opacity = byId(TINTS, build.tint).opacity;
 

@@ -68,7 +68,8 @@ how it accelerates, grips and slides.
 | ABS / traction control / stability control on-off | `Z` / `X` / `V` |
 | Launch control on-off | `G` |
 | Chat (multiplayer) | `Enter` to type, `Enter` to send, `Esc` to cancel |
-| Change camera (chase, close, hood, overhead) | `C` |
+| Switch camera: Third-person → Cockpit → Hood | `C` (or the **Camera** button) |
+| Third-person distance: Far → Near → Overhead | `B` |
 | Put the car back on the road | `R` |
 | Return to the garage (banks your score) | `Esc` |
 
@@ -118,6 +119,20 @@ The four preset buttons are in the Stance panel, with separate front and rear he
 (set them differently for rake) and a live ground-clearance readout. Presets can be changed
 while driving and the suspension glides to the new height without interrupting anything. Each
 car remembers its last air settings.
+
+**Cameras**
+
+| Camera | What you see |
+| --- | --- |
+| Third-person | The chase camera, trailing the direction of travel so slides show. Far, Near or Overhead with `B`. Pulls back when the parachute opens. |
+| Cockpit | The driver's eye, on the correct side of the car (right-hand drive for Japanese brands, left for the rest). Dashboard, A-pillars, rear-view mirror, centre console and a live instrument cluster with rev counter, gear, speed and shift lights. The steering wheel turns with your steering at a 13:1 ratio. Your head moves slightly with acceleration, braking and cornering, and the view leans into turns. |
+| Hood | Just above the bonnet, ahead of the windscreen, with the bonnet in the bottom of the frame. It follows pitch and most of the body roll. |
+
+The **Camera** button in the top-right corner shows the current camera; it and `C` cycle the
+three, gliding from one view to the next over half a second. Switching never affects the car:
+physics runs the same in every camera. The choice is remembered between sessions. Positions are
+worked out from each car's own body (seat, belt line, roof, cowl) and can be tuned per car with
+a `cam` entry in `js/data.js` (see `CAMERA` there for every setting).
 
 **Drag racing — Apex Dragway**
 
@@ -299,6 +314,7 @@ car-customizer/
 │   ├── drive.js        Drive mode: vehicle physics, driving modes, transmissions, cameras
 │   ├── drag.js         Drag race control: staging, tree, timing, time slip
 │   ├── chute.js        Parachute pack and canopy
+│   ├── cockpit.js      Cockpit interior, instrument cluster and camera attachment points
 │   ├── net.js          Multiplayer client (WebSocket)
 │   ├── remote.js       Other players' cars and name tags
 │   ├── stats.js        Performance model and pricing

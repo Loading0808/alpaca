@@ -185,22 +185,40 @@ export function buildShell(S, M) {
   };
   const gHalves = gx.filter((x, i) => i === 0 || x - gx[i - 1] > 0.002).map(x => ({ x, h: gHalf(x) }));
   const gn = 5 + NR, gM = 2 * gn - 2;
+  // open ring (closed = false): the greenhouse is only the glass, pillars and roof — no panel across the cabin at belt height
   loft(mb, gHalves.map(o => fullRing(o.h)), (i, j) => {
     const hs = j < gn - 1 ? j : gM - 1 - j, xm = (gHalves[i].x + gHalves[i + 1].x) / 2;
     if (hs === 0) return 'trim';                                   // belt-line window surround
-    if (hs < 3) return xm < cpX ? 'paint' : Math.abs(xm - bpX) < 0.035 ? 'trim' : 'glass';   // C-pillar / B-pillar / side glass
-    if (hs === 3) return 'paint';
+    if (hs < 3) return xm < cpX ? 'gpaint' : Math.abs(xm - bpX) < 0.035 ? 'trim' : 'glass';   // C-pillar / B-pillar / side glass
+    if (hs === 3) return 'gpaint';                                    // A-pillar and cant rail
     return (xm > S.wsX || xm < S.rwX) ? 'glass' : 'roof';
-  });
+  }, false);
 
   const meshes = [];
   for (const k of mb.keys()) {
     const g = mb.geometry(k, k === 'glass' ? 0.5 : 0.8, k === 'roof' ? 9 : k === 'paint' ? 26 : 0);
     if (!g) continue;
-    const m = new THREE.Mesh(g, M[k]);
-    m.name = k; m.castShadow = k !== 'glass'; m.receiveShadow = false;
+    if (k === 'gpaint') {
+      // pillars are painted outside only: work out which face winding points away from the cabin, so the
+      // inside can be culled and the trim lining below shows instead of body colour
+      const p = g.attributes.position, a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(); let out = 0;
+      for (let i = 0; i < p.count; i += 3) {
+        a.fromBufferAttribute(p, i); b.fromBufferAttribute(p, i + 1); c.fromBufferAttribute(p, i + 2);
+        const n = b.clone().sub(a).cross(c.clone().sub(a)), cen = a.add(b).add(c).multiplyScalar(1 / 3);
+        out += Math.sign(n.y * (cen.y - S.H * 0.55) + n.z * cen.z);
+      }
+      M.gpaintSide = out >= 0 ? THREE.FrontSide : THREE.BackSide;
+    }
+    const m = new THREE.Mesh(g, k === 'gpaint' ? M.gpaint : M[k]);
+    m.name = k === 'gpaint' ? 'paint' : k; m.castShadow = k !== 'glass'; m.receiveShadow = false;
     if (k === 'glass') m.renderOrder = 2;
     meshes.push(m);
+    if (k === 'gpaint') {
+      // the same pillars seen from inside the cabin: a dark trim lining just inboard of the paint
+      const inner = g.clone(), p = inner.attributes.position;
+      for (let i = 0; i < p.count; i++) { const z = p.getZ(i); p.setZ(i, z - Math.sign(z) * 0.008); p.setY(i, p.getY(i) - 0.004); }
+      const im = new THREE.Mesh(inner, M.interior); im.name = 'pillarTrim'; meshes.push(im);
+    }
   }
   return meshes;
 }
@@ -347,8 +365,7 @@ export function buildDetails(S, M, build, exhaust) {
     const back = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.62, 0.44), M.seat); back.position.set(seatX - 0.17, fy + 0.5, s * 0.36); back.rotation.z = 0.3;
     base.userData.solid = back.userData.solid = true; g.add(base, back);
   }
-  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.016, 8, 24), M.seat);
-  sw.position.set(seatX + 0.5, fy + 0.52, 0.36); sw.rotation.y = Math.PI / 2; sw.rotation.z = 0; sw.rotateX(0.35); sw.userData.solid = true; g.add(sw);
+  // (the steering wheel, dashboard and instruments are built by cockpit.js)
 
   // ---- exhaust tips
   const layout = exhaust.tips === 'stock' ? car.tips : (car.tips.startsWith('center') ? 'center2' : exhaust.tips);

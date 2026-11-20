@@ -8,7 +8,7 @@ import { Car } from './car.js';
 import { EngineAudio } from './audio.js';
 import { computeStats, buildSheet, resolve, maxDrop } from './stats.js';
 import { initUI } from './ui.js';
-import { Drive, TRANSMISSIONS, DRIVE_MODES, CUSTOM_DEFAULT } from './drive.js';
+import { Drive, TRANSMISSIONS, DRIVE_MODES, CUSTOM_DEFAULT, CAMERA_MODES, CHASE_VIEWS } from './drive.js';
 import { Net } from './net.js';
 import { RemoteCars } from './remote.js';
 import { WORLDS } from './world.js';
@@ -236,6 +236,12 @@ function renderDriveMenu() {
   $('dmName').value = me;
 }
 app.setTransmission = id => { drive.setTransmission(id); prefs.trans = drive.trans; savePrefs(); hud.trans.textContent = TRANSMISSIONS.find(t => t.id === drive.trans).name; };
+// ---- cameras: Third-person / Cockpit / Hood (C), third-person distance (B). Remembered between sessions.
+const camLabel = () => { $('hudCamName').textContent = drive.cameraLabel(); };
+app.nextCamera = () => { const m = drive.nextCamera(); prefs.cam = m.id; savePrefs(); camLabel(); if (app.driving) feed(`Camera: ${drive.cameraLabel()}`, 0, 'minor'); return m; };
+app.nextChaseView = () => { const v = drive.nextChaseView(); prefs.cam = 'chase'; prefs.chaseView = CHASE_VIEWS[drive.chaseView].id; savePrefs(); camLabel(); if (app.driving) feed(`Camera: ${drive.cameraLabel()}`, 0, 'minor'); return v; };
+drive.setCamera(Math.max(0, CAMERA_MODES.findIndex(m => m.id === prefs.cam)), true);
+drive.chaseView = Math.max(0, CHASE_VIEWS.findIndex(v => v.id === prefs.chaseView));
 app.setMode = id => { const m = drive.setMode(id); prefs.mode = m.id; savePrefs(); return m; };
 app.toggleAssist = k => { const on = drive.toggleAssist(k); prefs.assists = { ...drive.assistOverride }; savePrefs(); return on; };
 drive.assistOverride = { ...(prefs.assists || {}) };
@@ -348,7 +354,7 @@ app.drive = (id, opts = {}) => {
   prefs.world = world.id; if (boardWorld !== 'online') boardWorld = world.id; savePrefs();
   app.driving = true; document.body.classList.add('driving');
   hud.place.textContent = world.name; hud.laps.style.display = world.hasLaps ? '' : 'none';
-  hud.trans.textContent = TRANSMISSIONS.find(t => t.id === drive.trans).name; hud.feed.replaceChildren();
+  hud.trans.textContent = TRANSMISSIONS.find(t => t.id === drive.trans).name; hud.feed.replaceChildren(); camLabel();
   if (!eng.running) { audio.start(); eng.running = true; ui.setRunning(true); }
   eng.cranking = 0; eng.input = 0;
   if (drive.trans !== 'auto') feed(drive.trans === 'manual' ? 'Manual: hold Left Shift and press E / Q to change gear' : 'Semi-automatic: E shifts up, Q shifts down', 0, 'minor');
@@ -421,7 +427,9 @@ $('btnSave').addEventListener('click', app.save); $('btnLoad').addEventListener(
 $('btnDrive').addEventListener('click', () => app.openDriveMenu());
 $('driveClose').addEventListener('click', () => $('driveMenu').classList.remove('show'));
 $('hudChute').addEventListener('click', () => feed(drive.toggleChute(), 0, 'minor'));
-$('hudExit').addEventListener('click', () => app.exitDrive()); $('hudReset').addEventListener('click', () => drive.respawn()); $('hudCam').addEventListener('click', () => drive.nextCamera());
+$('hudExit').addEventListener('click', () => app.exitDrive()); $('hudReset').addEventListener('click', () => drive.respawn()); $('hudCam').addEventListener('click', () => app.nextCamera());
+// HUD buttons never take keyboard focus, so Space (handbrake) and other driving keys can't "press" them by accident
+for (const b of document.querySelectorAll('.hud-btns .btn')) { b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', () => { b.blur(); $('view').focus(); }); }
 $('btnReset').addEventListener('click', app.reset); $('btnShot').addEventListener('click', app.shot);
 window.addEventListener('keydown', e => {
   if (e.target.matches('input, textarea')) return;
@@ -429,7 +437,7 @@ window.addEventListener('keydown', e => {
     keys[e.code] = true;
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     if (e.repeat) return;
-    if (e.code === 'Escape') app.exitDrive(); else if (e.code === 'KeyR') drive.respawn(); else if (e.code === 'KeyC') drive.nextCamera(); else if (e.code === 'KeyL') app.toggle('lights');
+    if (e.code === 'Escape') app.exitDrive(); else if (e.code === 'KeyR') drive.respawn(); else if (e.code === 'KeyC') app.nextCamera(); else if (e.code === 'KeyB') app.nextChaseView(); else if (e.code === 'KeyL') app.toggle('lights');
     else if (e.code === 'KeyE') drive.shift(1, !!keys.ShiftLeft); else if (e.code === 'KeyQ') drive.shift(-1, !!keys.ShiftLeft);
     else if (e.code === 'KeyZ' || e.code === 'KeyX' || e.code === 'KeyV') { const k = { KeyZ: 'abs', KeyX: 'tcs', KeyV: 'esp' }[e.code], on = app.toggleAssist(k); feed(`${k.toUpperCase()} ${on ? 'on' : 'off'}`, 0, on ? 'minor' : 'bad'); }
     else if (e.code === 'KeyG') { const su = app.setSetup({ lc: !app.setup().lc }); feed(su.lc ? `Launch control armed at ${su.lcRpm} rpm — hold brake or handbrake, floor it, release` : 'Launch control off', 0, 'minor'); }
@@ -478,6 +486,7 @@ function frame() {
     eng.rpm = d.rpm; eng.throttle = d.throttle; eng.boost = d.boost;
     car.update(dt, eng.rpm, 0, true, false, stats.redline);
     hud.speed.textContent = Math.round(d.kmh); hud.gear.textContent = d.gear;
+    if (d.camera !== hud.camShown) { hud.camShown = d.camera; $('hudCamName').textContent = d.camera; }
     hud.trans.textContent = `${TRANSMISSIONS.find(t => t.id === d.trans).name} · ${d.mode}`;
     // driver-aid lamps: green = on, struck through = off, yellow = working right now
     for (const k of ['abs', 'tcs', 'esp']) hud.aid[k].className = d.active[k] ? 'act' : d.assists[k] ? 'on' : 'off';
@@ -512,4 +521,4 @@ function frame() {
 frame();
 
 // handy for tinkering from the DevTools console
-window.apex = { app, car, stage, audio, eng, drive, keys, maxDrop, Records, net, remotes, ride };
+window.apex = { CAMERA_MODES, app, car, stage, audio, eng, drive, keys, maxDrop, Records, net, remotes, ride };

@@ -3,6 +3,34 @@
 // All dimensions are in metres, weights in kg, prices in USD.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Camera rig. All distances in metres, angles in radians. Any car can override
+// any value with a `cam` entry, e.g. cam: { cockpit: { headroom: 0.08 } }.
+// ---------------------------------------------------------------------------
+export const CAMERA = {
+  blend: 0.5,                                                     // seconds to glide between camera modes
+  chase: {                                                        // third-person
+    views: { far: { dist: 6.6, height: 2.25 }, near: { dist: 4.6, height: 1.35 }, top: { dist: 6, height: 46 } },
+    fov: 58, fovPerMs: 0.2, fovMax: 20,
+  },
+  cockpit: {
+    driver: 'auto',            // 'left' | 'right' | 'auto' (right-hand drive for Japanese brands)
+    driverZ: 0.37,             // eye distance from the centre line
+    eyeBack: 0.06,             // eye behind the seat reference point
+    eyeAboveSeat: 0.78,        // seated eye height above the seat cushion
+    headroom: 0.11,            // minimum gap between eye and roof
+    wheelReach: 0.44, wheelBelowEye: 0.37, wheelTilt: 0.38, steerRatio: 13,
+    clusterReach: 0.7, clusterBelowEye: 0.18, dashReach: 0.56, dashBelowEye: 0.27, lookDown: 0.035,
+    fov: 72, fovPerMs: 0.06, fovMax: 6, sway: 1,
+  },
+  hood: { ahead: 0.3, height: 0.3, pitch: -0.035, fov: 68, fovPerMs: 0.12, fovMax: 12, rollFollow: 0.6 },
+};
+/** Camera settings for one car: the defaults above merged with the car's own `cam` overrides. */
+export function cameraConfig(car) {
+  const o = car.cam || {};
+  return { blend: o.blend ?? CAMERA.blend, chase: { ...CAMERA.chase, ...o.chase }, cockpit: { ...CAMERA.cockpit, ...o.cockpit }, hood: { ...CAMERA.hood, ...o.hood } };
+}
+
 export const PROFILE_DEFAULTS = {
   hoodPow: 0.6,      // <1 = bluff nose, ~1 = wedge
   crown: 0.06,       // centreline height above the shoulder line
