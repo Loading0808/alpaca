@@ -243,7 +243,12 @@ export class Drive {
     let thrRaw = inp.fwd, brk = inp.back;
     if (auto) {
       if (s.gear === 0) s.gear = 1;
-      if (s.gear >= 1 && inp.back && !inp.fwd && s.vx < 0.6) s.gear = -1;
+      // S at a standstill selects reverse — unless the throttle was also pressed during this press of S
+      // (a launch-control hold): lifting off the throttle then just keeps the car parked on the brake
+      if (inp.back && !s.backWas) s.backFwd = false;
+      if (inp.back && inp.fwd) s.backFwd = true;
+      s.backWas = inp.back;
+      if (s.gear >= 1 && inp.back && !inp.fwd && !s.backFwd && s.vx < 0.6) s.gear = -1;
       if (s.gear === -1) { thrRaw = inp.back; brk = inp.fwd; if (inp.fwd && s.vx > -0.6) { s.gear = 1; thrRaw = inp.fwd; brk = 0; } }
     }
     // throttle response: how quickly the pedal reaches what you asked for
@@ -273,13 +278,20 @@ export class Drive {
     // releasing the brake drops the clutch at that rpm
     const holding = (brk > 0.5 || inp.hand) && v < 0.6;
     s.lcHold = su.lc && s.gear === 1 && thrRaw > 0.5 && holding;
-    if (s.lcHold) s.lcT = 1.2; else s.lcT = Math.max(0, s.lcT - h);
+    // after the brake is released the launch logic stays on for a moment — but only while you keep the throttle down
+    if (s.lcHold) s.lcT = 1.2; else s.lcT = thrRaw > 0.5 ? Math.max(0, s.lcT - h) : 0;
     const lcLive = su.lc && s.gear === 1 && s.lcT > 0;
     const slipRpm = lcLive ? Math.min(su.lcRpm, P.redline * 0.95) : P.idle + thr * (P.launch - P.idle);
     let rpm, te = thr;
     s.cutT = Math.max(0, s.cutT - h);
     if (engaged && !s.lcHold) {
-      rpm = Math.max(coupled, s.gear === 1 || s.gear === -1 ? slipRpm : P.idle * 0.85);
+      // first and reverse slip the clutch: the engine starts at the launch rpm and climbs smoothly with the
+      // wheels, never sitting flat while it waits for them, and the clutch is fully locked by lockRpm
+      if (s.gear === 1 || s.gear === -1) {
+        const S0 = slipRpm, lockRpm = Math.min(1.6 * S0, S0 + 0.6 * (P.redline - S0)), u = Math.min(1, coupled / lockRpm);
+        const p0 = lockRpm / (lockRpm - S0), w = 0.5, pw = (p0 - w) / (1 - w);       // meets the wheel speed with matching slope: no kink
+        rpm = coupled >= lockRpm ? coupled : S0 + (lockRpm - S0) * ((1 - w) * Math.pow(u, pw) + w * u);
+      } else rpm = Math.max(coupled, P.idle * 0.85);
       if (rpm >= P.redline) s.cutT = 0.07;
       rpm = Math.min(rpm, P.redline * 1.01); s.rpmFree = rpm;
     } else {                                                    // clutch in / neutral / mid-shift / launch hold: the engine revs freely
@@ -416,7 +428,7 @@ export class Drive {
 
     // --- automatic gearbox
     if (auto && s.gear >= 1 && s.shiftT <= 0) {
-      if (coupled > P.redline * 0.965 && s.gear < 6) { s.gear++; s.shiftT = 0.18 * md.shift; }
+      if (Math.max(coupled, rpm) > P.redline * 0.965 && s.gear < 6) { s.gear++; s.shiftT = 0.18 * md.shift; }
       else if (s.gear > 1 && coupled * P.gears[s.gear - 2] / P.gears[s.gear - 1] < P.redline * (thr > 0.7 ? 0.8 : 0.52)) { s.gear--; s.shiftT = 0.13 * md.shift; }
     }
     s.rpm += (rpm - s.rpm) * Math.min(1, h * 22); s.thr = te;

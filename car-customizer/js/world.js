@@ -508,40 +508,34 @@ function buildDrag(renderer, opts = {}) {
     c.fillStyle = '#e8e8e8'; c.fillRect(0, h / 2 - 2, w, 4);                 // lane divider (edge lines are separate decals)
   }, 60, 1);
 
-  const white = new THREE.MeshBasicMaterial({ color: night ? 0xbfc3c9 : 0xf1f1f1 });
-  // ---- road layout: the strip, plus one continuous return road that leaves the shutdown area through a
-  // turn-off in the south wall, runs back along the pits side, swings round behind the start and opens
-  // out into the staging lanes, which meet the strip edge-to-edge at its start (x = X0).
-  const XM = 820, RW = 4.5, R1 = 16, R2 = 8, RZ = -(HALF + 46);          // turn-off centre, road half-width, corner radii, return road line
-  const AX = XM - RW - R1, DX = XM + RW + R2;                               // the turn-off mouth spans AX..DX along the strip's south edge
-  const path = roadPath([XM, -HALF], -Math.PI / 2, [
-    { len: -RZ - HALF - 20 },                 // out of the strip, straight away from the wall
-    { r: 20, turn: -Math.PI / 2 },            // onto the return road
-    { len: XM - 20 + 110 },                   // back along the return road
-    { r: -RZ / 2, turn: -Math.PI },           // round behind the start area
+  // painted markings sit 1 cm above the surface and are pulled further forward in depth than it is, so they
+  // stay visible from far away and at low angles
+  const decal = m => { m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2; return m; };
+  const white = decal(new THREE.MeshBasicMaterial({ color: night ? 0xbfc3c9 : 0xf1f1f1 }));
+  // ---- road layout: the strip, plus one continuous return road. At the far end the strip narrows into a
+  // U-turn that brings you back along the pits side; at the start end a second U-turn leads into the
+  // staging lanes, which widen to the full strip. Both ends of the road meet the strip edge-to-edge.
+  const RW = 4.5, RZ = -(HALF + 46), UR = -RZ / 2, LEAD = 35, FLARE = 30;   // road half-width, return road line, U-turn radius, straight at each end, taper length
+  const path = roadPath([X1, 0], 0, [
+    { len: LEAD },                            // shutdown lane off the end of the strip
+    { r: UR, turn: -Math.PI },                // U-turn at the far end
+    { len: X1 + LEAD + 110 },                 // back along the return road
+    { r: UR, turn: -Math.PI },                // U-turn behind the start area
     { len: X0 + 110 },                        // staging approach
   ], 1);
-  const S = path[path.length - 1].s, FLARE = 30;
-  const wOf = p => RW + (HALF - RW) * smooth01((p.s - (S - FLARE)) / FLARE);   // widens to the full strip in the staging lanes
+  const S = path[path.length - 1].s;
+  const wOf = p => RW + (HALF - RW) * (smooth01((FLARE - p.s) / FLARE) + smooth01((p.s - (S - FLARE)) / FLARE));   // full strip width at both ends
   const at = (p, k) => ({ x: p.x + p.nx * k, z: p.z + p.nz * k });
-  const arc = (cx, cz, r, a0, a1, n = 24) => Array.from({ length: n + 1 }, (_, i) => { const a = a0 + (a1 - a0) * i / n; return { x: cx + r * Math.cos(a), z: cz + r * Math.sin(a) }; });
-  // outline, anticlockwise: west corner radius, inner edge of the loop, across the staging end, outer edge back, east corner radius
-  const outline = [
-    ...arc(AX, -HALF - R1, R1, Math.PI / 2, 0),
-    ...path.filter(p => p.s > R1 + 1e-6).map(p => at(p, -wOf(p))),
-    ...path.filter(p => p.s >= R2 - 1e-6).reverse().map(p => at(p, wOf(p))),
-    ...arc(DX, -HALF - R2, R2, Math.PI, Math.PI / 2).slice(1),
-  ];
+  // outline: inner edge all the way round, across the staging end, outer edge back; the far-end edge closes it
+  const outline = [...path.map(p => at(p, -wOf(p))), ...path.slice().reverse().map(p => at(p, wOf(p)))];
   let bx0 = 1e9, bx1 = -1e9, bz0 = 1e9, bz1 = -1e9; for (const p of outline) { bx0 = Math.min(bx0, p.x); bx1 = Math.max(bx1, p.x); bz0 = Math.min(bz0, p.z); bz1 = Math.max(bz1, p.z); }
   const onRoad = (x, z) => x >= bx0 && x <= bx1 && z >= bz0 && z <= bz1 && insidePolygon(outline, x, z);
   const onStrip = (x, z) => x >= X0 && x <= X1 && Math.abs(z) <= HALF;
 
-  // strip surface, with vertices exactly where the turn-off mouth meets it, so the two surfaces share edges
+  // strip surface: same corners as the road ends, so the surfaces share their edges exactly
   {
-    const xs = [X0, AX, DX, X1], pos = [], uv = [], idx = [];
-    for (const x of xs) { const u = (x - X0) / (X1 - X0); pos.push(x, 0.02, -HALF, x, 0.02, HALF); uv.push(u, 1, u, 0); }
-    for (let i = 0; i < xs.length - 1; i++) { const k = i * 2; idx.push(k, k + 1, k + 3, k, k + 3, k + 2); }
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
+    const pos = [X0, 0.02, -HALF, X0, 0.02, HALF, X1, 0.02, -HALF, X1, 0.02, HALF], uv = [0, 1, 0, 0, 1, 1, 1, 0];
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex([0, 1, 3, 0, 3, 2]); geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: stripT, roughness: 0.55, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); m.receiveShadow = true; m.name = 'strip'; g.add(m);
   }
   // return road surface: one mesh, same height as the strip, no overlap
@@ -551,33 +545,28 @@ function buildDrag(renderer, opts = {}) {
   });
   { const m = new THREE.Mesh(polygonGeometry(outline, 0.02, 1 / 8), new THREE.MeshStandardMaterial({ map: roadT, roughness: 0.62, metalness: 0.08, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); m.receiveShadow = true; m.name = 'returnRoad'; g.add(m); }
 
-  // markings (one mesh): strip edge lines — dashed across the turn-off — continuing into the road's edge
-  // lines; the road's dashed centre line, which becomes the solid lane divider through the staging lanes
+  // markings (one mesh): strip edge lines continuing into the road's edge lines at both ends; the strip's
+  // lane divider continuing as a solid line through both tapers and a dashed centre line in between
   {
     const IN = 0.31, LW = 0.06, line = [], band = (pts, w = LW) => line.push(bandGeometry(pts, -w, w, 0.03));
-    const xLine = (x0, x1, z) => band([{ x: x0, z }, { x: x1, z }]);
-    xLine(X0, X1, HALF - IN); xLine(X0, AX, -(HALF - IN)); xLine(DX, X1, -(HALF - IN));
-    for (let x = AX + 0.5; x < DX - 0.5; x += 2) xLine(x, Math.min(x + 1, DX - 0.5), -(HALF - IN));
-    band([...arc(AX, -HALF - R1, R1 + IN, Math.PI / 2, 0), ...path.filter(p => p.s > R1 + 1e-6).map(p => at(p, -(wOf(p) - IN)))]);
-    band([...path.filter(p => p.s >= R2 - 1e-6).reverse().map(p => at(p, wOf(p) - IN)), ...arc(DX, -HALF - R2, R2 + IN, Math.PI, Math.PI / 2).slice(1)]);
+    band([{ x: X0, z: HALF - IN }, { x: X1, z: HALF - IN }]); band([{ x: X0, z: -(HALF - IN) }, { x: X1, z: -(HALF - IN) }]);
+    band(path.map(p => at(p, -(wOf(p) - IN)))); band(path.map(p => at(p, wOf(p) - IN)));
     const seg = (s0, s1) => path.filter(p => p.s >= s0 - 1e-6 && p.s <= s1 + 1e-6);
-    for (let s0 = 14; s0 + 3 < S - FLARE; s0 += 9) band(seg(s0, s0 + 3));
-    band(seg(S - FLARE, S), 0.075);
-    const lineM = white.clone(); lineM.polygonOffset = true; lineM.polygonOffsetFactor = -2; lineM.polygonOffsetUnits = -2;
-    g.add(new THREE.Mesh(mergeGeometries(line), lineM));
+    band(seg(0, FLARE), 0.075); band(seg(S - FLARE, S), 0.075);
+    for (let s0 = FLARE + 4; s0 + 3 < S - FLARE; s0 += 9) band(seg(s0, s0 + 3));
+    g.add(new THREE.Mesh(mergeGeometries(line), decal(white)));
   }
-  flat(22, HALF * 2 - 0.4, new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.18, metalness: 0.3 }), -34, 0, 0.025);        // water box
+  flat(22, HALF * 2 - 0.4, decal(new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.18, metalness: 0.3 })), -34, 0, 0.025);        // water box
   flat(0.25, HALF * 2, white, 0, 0, 0.03);
   for (const d of [DRAG.FT60, DRAG.FT330, DRAG.EIGHTH, DRAG.FT1000, DRAG.QUARTER]) flat(d === DRAG.EIGHTH || d === DRAG.QUARTER ? 0.5 : 0.12, HALF * 2, white, d, 0, 0.03);
   const chk = tex(64, 32, (c) => { for (let x = 0; x < 8; x++) for (let y = 0; y < 4; y++) { c.fillStyle = (x + y) % 2 ? '#111' : '#f4f4f4'; c.fillRect(x * 8, y * 8, 8, 8); } }, 8, 1);
-  const finishLine = flat(1.2, HALF * 2, new THREE.MeshBasicMaterial({ map: chk }), DRAG.QUARTER + 0.9, 0, 0.032); finishLine.rotation.z = Math.PI / 2;
+  const finishLine = flat(1.2, HALF * 2, decal(new THREE.MeshBasicMaterial({ map: chk })), DRAG.QUARTER + 0.9, 0, 0.032); finishLine.rotation.z = Math.PI / 2;
   // sand trap at the very end
-  flat(110, HALF * 2, M(0xb7a273, 1), X1 - 55, 0, 0.04);
 
-  // walls: concrete along both sides and across the far end, open at the start (staging lanes) and at the
-  // turn-off. This list is what the cars collide with, so what you see is what stops you.
+  // walls: concrete along both sides, open at both ends where the road joins. This list is also what
+  // the cars collide with, so what you see is what stops you.
   const wallM = M(0xc9ccd1, 0.8), WZ = HALF + 0.25;
-  const walls = [[X0, WZ, X1, WZ, 0.25], [X0, -WZ, AX, -WZ, 0.25], [DX, -WZ, X1, -WZ, 0.25], [X1 + 0.3, -WZ - 0.25, X1 + 0.3, WZ + 0.25, 0.3]];
+  const walls = [[X0, WZ, X1, WZ, 0.25], [X0, -WZ, X1, -WZ, 0.25]];
   for (const [ax, az, bx, bz, t] of walls) { const l = Math.hypot(bx - ax, bz - az); box(l, 1.0, t * 2, wallM, (ax + bx) / 2, 0.5, (az + bz) / 2, -Math.atan2(bz - az, bx - ax)); }
   for (const s of [1, -1]) {
     for (const [d, label] of [[DRAG.FT60, "60'"], [DRAG.FT330, "330'"], [DRAG.EIGHTH, '1/8'], [DRAG.FT1000, "1000'"], [DRAG.QUARTER, '1/4']]) {
@@ -660,21 +649,21 @@ function buildDrag(renderer, opts = {}) {
   g.add(trunks, leaves);
 
   // ---- facility: wall-end crash barrels, signs, junction lights and a perimeter fence
-  const FX0 = -190, FX1 = 1210, FZ0 = -95, FZ1 = 72;
+  const FX0 = -190, FX1 = X1 + LEAD + UR + RW + 60, FZ0 = -95, FZ1 = 72;
   const posts = [];                                                       // round obstacles [x, z, r]
   const yb = tex(32, 64, (c, w, h) => { for (let i = 0; i < 4; i++) { c.fillStyle = i % 2 ? '#111' : '#f2c100'; c.fillRect(0, i * h / 4, w, h / 4); } });
   const barrelG = new THREE.CylinderGeometry(0.32, 0.32, 0.95, 14), barrelM = new THREE.MeshStandardMaterial({ map: yb, roughness: 0.6 });
-  for (const [x, z] of [[X0 - 0.34, WZ], [X0 - 0.34, -WZ], [AX - 0.34, -WZ], [DX + 0.34, -WZ]]) { const b = new THREE.Mesh(barrelG, barrelM); b.position.set(x, 0.475, z); b.castShadow = true; g.add(b); posts.push([x, z, 0.32]); }
+  for (const [x, z] of [[X0 - 0.34, WZ], [X0 - 0.34, -WZ], [X1 + 0.34, WZ], [X1 + 0.34, -WZ]]) { const b = new THREE.Mesh(barrelG, barrelM); b.position.set(x, 0.475, z); b.castShadow = true; g.add(b); posts.push([x, z, 0.32]); }
   const signBoard = (text, sub, x, z, ry) => {
     const t = tex(512, 160, (c, w, h) => { c.fillStyle = '#0b0c0f'; c.fillRect(0, 0, w, h); c.fillStyle = '#ff5a1f'; c.fillRect(0, h - 12, w, 12); c.fillStyle = '#fff'; c.font = '900 58px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, w / 2, 58); c.fillStyle = '#c9ced6'; c.font = '700 30px Arial'; c.fillText(sub, w / 2, 112); });
     const grp = new THREE.Group(); grp.position.set(x, 0, z); grp.rotation.y = ry; g.add(grp);
     const b = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 1.5), new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide, color: night ? 0xb8b8b8 : 0xffffff })); b.position.y = 2.6; grp.add(b);
     for (const dx of [-1.9, 1.9]) { const pst = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.6, 0.12), M(0x2a2d33, 0.5, 0.6)); pst.position.set(dx, 1.3, 0.02); grp.add(pst); posts.push([x + dx * Math.cos(ry), z - dx * Math.sin(ry), 0.12]); }
   };
-  signBoard('RETURN ROAD', 'Exit here · back to staging', DX + 7, -HALF - 5, -Math.PI / 2);
+  signBoard('RETURN ROAD', 'U-turn ahead · back to staging', X1 - 40, -HALF - 4, -Math.PI / 2);
   signBoard('STAGING LANES', 'Burnout box · then stage', X0 - 26, HALF + 3.5, -Math.PI / 2);
   // junction floodlights (lit at night)
-  for (const [x, z, px, pz] of [[X0 - 22, -HALF - 4.5, X0 - 22, 0], [-110 - 39, -27.8, -110 - 28, -27.8], [XM + 16, -HALF - 30, XM - 2, -HALF - 30]]) {
+  for (const [x, z, px, pz] of [[X0 - 22, -HALF - 4.5, X0 - 22, 0], [-110 - 39, -27.8, -110 - 28, -27.8], [X1 + LEAD + UR + 11, -UR, X1 + LEAD + UR, -UR]]) {
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 14, 8), M(0x2a2d33, 0.5, 0.7)); pole.position.set(x, 7, z); g.add(pole); posts.push([x, z, 0.22]);
     const hd = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 1.2), new THREE.MeshBasicMaterial({ color: night ? 0xfff3d6 : 0x9a9da3 })); hd.position.set(x + (px - x) * 0.08, 14.1, z + (pz - z) * 0.08); g.add(hd);
     if (night) { const pt = tex(64, 64, (c, w) => { const gr = c.createRadialGradient(w / 2, w / 2, 2, w / 2, w / 2, w / 2); gr.addColorStop(0, 'rgba(255,240,210,0.42)'); gr.addColorStop(1, 'rgba(255,240,210,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, w); });
@@ -759,20 +748,20 @@ function buildDrag(renderer, opts = {}) {
     resetCollision(x, z, psi) { last = x === undefined ? null : { x, z, psi }; },   // placing the car: sweep from where it was put
     setPose(psi, len) { pose.psi = psi; pose.len = len || 4.5; },
     surface(x, z) {
-      if (onStrip(x, z)) { const sand = x > X1 - 110; return { grip: sand ? 0.7 : x < 440 ? 1.12 : 1, drag: sand ? 2.6 : 0, off: sand ? 1 : 0, lap: false, line: false }; }
+      if (onStrip(x, z)) return { grip: x < 440 ? 1.12 : 1, drag: 0, off: 0, lap: false, line: false };   // prepared surface for the first 440 m
       if (onRoad(x, z)) return { grip: 1, drag: 0, off: 0, lap: false, line: false };
       return { grip: 0.6, drag: 1, off: 1, lap: false, line: false };       // grass
     },
     collide,
     onStrip, onRoad,
-    layout: { path, outline, walls, boxes, posts, X0, X1, HALF, XM, AX, DX, RW, RZ, fence: [FX0, FX1, FZ0, FZ1] },
+    layout: { path, outline, walls, boxes, posts, X0, X1, HALF, RW, RZ, UR, LEAD, fence: [FX0, FX1, FZ0, FZ1] },
     respawn() { return this.spawn; },
   };
 }
 
 export const WORLDS = [
   { id: 'highway', name: 'Midnight Expressway', desc: 'A 6.5 km four-lane expressway loop with traffic, a bridge and tunnels. Score points by weaving through traffic.', build: buildHighway },
-  { id: 'drag', name: 'Apex Dragway', desc: 'Quarter-mile and eighth-mile drag strip with a Christmas tree, full timing and time boards. Day or night.', build: buildDrag },
+  { id: 'drag', name: 'Apex Dragway', desc: 'Quarter-mile and eighth-mile drag strip with a Christmas tree, full timing, time boards and a return road. Day or night.', build: buildDrag },
   { id: 'circuit', name: 'Apex Raceway', desc: 'A 1.5 km race circuit with lap timing. Daylight.', build: buildCircuit },
   { id: 'city', name: 'Neon District', desc: 'Free-roam a city grid at night. Watch the buildings.', build: buildCity },
 ];
