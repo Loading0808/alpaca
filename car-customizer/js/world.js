@@ -12,6 +12,78 @@ function tex(w, h, draw, rx = 1, ry = 1) {
 // deterministic random so the world is the same every visit
 function rng(seed) { let s = seed; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 
+// ---------------------------------------------------------------------------
+// Shared road geometry
+// ---------------------------------------------------------------------------
+const smooth01 = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+
+/**
+ * A flat band that follows a polyline — the same construction the race circuit uses for its
+ * asphalt and kerbs. pts: [{x, z}] (normals are taken from the neighbouring points unless a point
+ * carries nx / nz). o0 / o1: lateral offsets in metres, or functions (point, index) → offset.
+ */
+function bandGeometry(pts, o0, o1, y, { vScale = 10, closed = false, uA = 0, uB = 1 } = {}) {
+  const N = pts.length, M = closed ? N : N - 1, pos = [], uv = [], idx = [], off = (o, p, i) => (typeof o === 'function' ? o(p, i) : o);
+  let v = 0;
+  for (let i = 0; i <= M; i++) {
+    const p = pts[i % N];
+    let nx = p.nx, nz = p.nz;
+    if (nx === undefined) {
+      const a = pts[closed ? (i + N - 1) % N : Math.max(0, i - 1)], b = pts[closed ? (i + 1) % N : Math.min(N - 1, i + 1)];
+      const tx = b.x - a.x, tz = b.z - a.z, l = Math.hypot(tx, tz) || 1; nx = -tz / l; nz = tx / l;
+    }
+    if (i > 0) { const q = pts[(i - 1) % N]; v += Math.hypot(p.x - q.x, p.z - q.z) / vScale; }
+    const a0 = off(o0, p, i), a1 = off(o1, p, i);
+    pos.push(p.x + nx * a0, y, p.z + nz * a0, p.x + nx * a1, y, p.z + nz * a1); uv.push(uA, v, uB, v);
+    if (i < M) { const k = i * 2; idx.push(k, k + 1, k + 3, k, k + 3, k + 2); }
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * Road centreline from straights ({ len }) and constant-radius arcs ({ r, turn }; turn in radians,
+ * negative = clockwise seen from above). Heading h points along (cos h, sin h) in x / z.
+ * Points are about `step` metres apart and land exactly on every piece boundary; each carries its
+ * distance s, unit tangent (tx, tz) and left normal (nx, nz).
+ */
+function roadPath([x, z], h, pieces, step = 1) {
+  const out = [], push = s => out.push({ x, z, s, tx: Math.cos(h), tz: Math.sin(h), nx: -Math.sin(h), nz: Math.cos(h) });
+  let s = 0; push(0);
+  for (const pc of pieces) {
+    if (pc.len) {
+      const n = Math.max(1, Math.round(pc.len / step)), d = pc.len / n;
+      for (let i = 0; i < n; i++) { x += Math.cos(h) * d; z += Math.sin(h) * d; s += d; push(s); }
+    } else {
+      const n = Math.max(2, Math.ceil(pc.r * Math.abs(pc.turn) / step)), dh = pc.turn / n, chord = 2 * pc.r * Math.sin(Math.abs(dh) / 2);
+      for (let i = 0; i < n; i++) { const mid = h + dh / 2; x += Math.cos(mid) * chord; z += Math.sin(mid) * chord; h += dh; s += pc.r * Math.abs(dh); push(s); }
+    }
+  }
+  return out;
+}
+
+/** Flat mesh for any simple polygon [{x, z}] (triangulated with three's earcut), facing up, world-space UVs. */
+function polygonGeometry(outline, y, uvScale) {
+  const tris = THREE.ShapeUtils.triangulateShape(outline.map(p => new THREE.Vector2(p.x, p.z)), []), pos = [], uv = [];
+  for (let [a, b, c] of tris) {
+    const A = outline[a], B = outline[b], C = outline[c];
+    if ((B.z - A.z) * (C.x - A.x) - (B.x - A.x) * (C.z - A.z) < 0) [b, c] = [c, b];   // wind every triangle so it faces up
+    for (const i of [a, b, c]) { pos.push(outline[i].x, y, outline[i].z); uv.push(outline[i].x * uvScale, outline[i].z * uvScale); }
+  }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.computeVertexNormals();
+  return geo;
+}
+
+/** Even-odd point-in-polygon test. */
+function insidePolygon(poly, x, z) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.z > z) !== (b.z > z) && x < (b.x - a.x) * (z - a.z) / (b.z - a.z) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 function skyDome(top, mid, bottom, sun) {
   const t = tex(16, 256, (g, w, h) => {
     const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, top); gr.addColorStop(0.47, mid); gr.addColorStop(0.5, bottom); gr.addColorStop(1, bottom);
@@ -44,16 +116,8 @@ function buildCircuit(renderer) {
   const N = 900, pts = curve.getSpacedPoints(N).slice(0, N), len = curve.getLength();
   const nrm = pts.map((p, i) => { const a = pts[(i + N - 1) % N], b = pts[(i + 1) % N], tx = b.x - a.x, tz = b.z - a.z, l = Math.hypot(tx, tz); return { x: -tz / l, z: tx / l, tx: tx / l, tz: tz / l }; });
 
-  const ribbon = (o0, o1, y, vScale, uA = 0, uB = 1) => {
-    const pos = [], uv = [], idx = [];
-    for (let i = 0; i <= N; i++) {
-      const p = pts[i % N], n = nrm[i % N], v = i / N * len / vScale;
-      pos.push(p.x + n.x * o0, y, p.z + n.z * o0, p.x + n.x * o1, y, p.z + n.z * o1); uv.push(uA, v, uB, v);
-      if (i < N) { const a = i * 2; idx.push(a, a + 1, a + 3, a, a + 3, a + 2); }
-    }
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
-    return geo;
-  };
+  // asphalt and kerbs: bands that follow the centreline (shared with the dragway's return road)
+  const ribbon = (o0, o1, y, vScale, uA = 0, uB = 1) => bandGeometry(pts.map((p, i) => ({ x: p.x, z: p.z, nx: nrm[i].x, nz: nrm[i].z })), o0, o1, y, { vScale, closed: true, uA, uB });
   const asphalt = tex(256, 256, (c, w, h) => {
     c.fillStyle = '#2b2d31'; c.fillRect(0, 0, w, h);
     for (let i = 0; i < 5000; i++) { const v = 34 + Math.random() * 30; c.fillStyle = `rgba(${v},${v},${v + 2},0.5)`; c.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
@@ -441,11 +505,68 @@ function buildDrag(renderer, opts = {}) {
     c.fillStyle = '#2a2c30'; c.fillRect(0, 0, w, h);
     for (let i = 0; i < 9000; i++) { const v = 32 + Math.random() * 26; c.fillStyle = `rgba(${v},${v},${v + 2},0.5)`; c.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
     for (const zc of [0.265, 0.735]) for (const o of [-0.045, 0.045]) { c.fillStyle = 'rgba(8,8,9,0.55)'; c.fillRect(0, (zc + o) * h - 9, w, 18); }
-    c.fillStyle = '#e8e8e8'; c.fillRect(0, h / 2 - 2, w, 4); c.fillRect(0, 4, w, 3); c.fillRect(0, h - 7, w, 3);
+    c.fillStyle = '#e8e8e8'; c.fillRect(0, h / 2 - 2, w, 4);                 // lane divider (edge lines are separate decals)
   }, 60, 1);
-  flat(X1 - X0, HALF * 2, new THREE.MeshStandardMaterial({ map: stripT, roughness: 0.55, metalness: 0.1 }), (X0 + X1) / 2, 0);
-  flat(22, HALF * 2 - 0.4, new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.18, metalness: 0.3 }), -34, 0, 0.025);        // water box
+
   const white = new THREE.MeshBasicMaterial({ color: night ? 0xbfc3c9 : 0xf1f1f1 });
+  // ---- road layout: the strip, plus one continuous return road that leaves the shutdown area through a
+  // turn-off in the south wall, runs back along the pits side, swings round behind the start and opens
+  // out into the staging lanes, which meet the strip edge-to-edge at its start (x = X0).
+  const XM = 820, RW = 4.5, R1 = 16, R2 = 8, RZ = -(HALF + 46);          // turn-off centre, road half-width, corner radii, return road line
+  const AX = XM - RW - R1, DX = XM + RW + R2;                               // the turn-off mouth spans AX..DX along the strip's south edge
+  const path = roadPath([XM, -HALF], -Math.PI / 2, [
+    { len: -RZ - HALF - 20 },                 // out of the strip, straight away from the wall
+    { r: 20, turn: -Math.PI / 2 },            // onto the return road
+    { len: XM - 20 + 110 },                   // back along the return road
+    { r: -RZ / 2, turn: -Math.PI },           // round behind the start area
+    { len: X0 + 110 },                        // staging approach
+  ], 1);
+  const S = path[path.length - 1].s, FLARE = 30;
+  const wOf = p => RW + (HALF - RW) * smooth01((p.s - (S - FLARE)) / FLARE);   // widens to the full strip in the staging lanes
+  const at = (p, k) => ({ x: p.x + p.nx * k, z: p.z + p.nz * k });
+  const arc = (cx, cz, r, a0, a1, n = 24) => Array.from({ length: n + 1 }, (_, i) => { const a = a0 + (a1 - a0) * i / n; return { x: cx + r * Math.cos(a), z: cz + r * Math.sin(a) }; });
+  // outline, anticlockwise: west corner radius, inner edge of the loop, across the staging end, outer edge back, east corner radius
+  const outline = [
+    ...arc(AX, -HALF - R1, R1, Math.PI / 2, 0),
+    ...path.filter(p => p.s > R1 + 1e-6).map(p => at(p, -wOf(p))),
+    ...path.filter(p => p.s >= R2 - 1e-6).reverse().map(p => at(p, wOf(p))),
+    ...arc(DX, -HALF - R2, R2, Math.PI, Math.PI / 2).slice(1),
+  ];
+  let bx0 = 1e9, bx1 = -1e9, bz0 = 1e9, bz1 = -1e9; for (const p of outline) { bx0 = Math.min(bx0, p.x); bx1 = Math.max(bx1, p.x); bz0 = Math.min(bz0, p.z); bz1 = Math.max(bz1, p.z); }
+  const onRoad = (x, z) => x >= bx0 && x <= bx1 && z >= bz0 && z <= bz1 && insidePolygon(outline, x, z);
+  const onStrip = (x, z) => x >= X0 && x <= X1 && Math.abs(z) <= HALF;
+
+  // strip surface, with vertices exactly where the turn-off mouth meets it, so the two surfaces share edges
+  {
+    const xs = [X0, AX, DX, X1], pos = [], uv = [], idx = [];
+    for (const x of xs) { const u = (x - X0) / (X1 - X0); pos.push(x, 0.02, -HALF, x, 0.02, HALF); uv.push(u, 1, u, 0); }
+    for (let i = 0; i < xs.length - 1; i++) { const k = i * 2; idx.push(k, k + 1, k + 3, k, k + 3, k + 2); }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: stripT, roughness: 0.55, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); m.receiveShadow = true; m.name = 'strip'; g.add(m);
+  }
+  // return road surface: one mesh, same height as the strip, no overlap
+  const roadT = tex(256, 256, (c, w, h) => {
+    c.fillStyle = '#2c2e33'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 7000; i++) { const v = 32 + Math.random() * 26; c.fillStyle = `rgba(${v},${v},${v + 2},0.5)`; c.fillRect(Math.random() * w, Math.random() * h, 1.5, 1.5); }
+  });
+  { const m = new THREE.Mesh(polygonGeometry(outline, 0.02, 1 / 8), new THREE.MeshStandardMaterial({ map: roadT, roughness: 0.62, metalness: 0.08, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); m.receiveShadow = true; m.name = 'returnRoad'; g.add(m); }
+
+  // markings (one mesh): strip edge lines — dashed across the turn-off — continuing into the road's edge
+  // lines; the road's dashed centre line, which becomes the solid lane divider through the staging lanes
+  {
+    const IN = 0.31, LW = 0.06, line = [], band = (pts, w = LW) => line.push(bandGeometry(pts, -w, w, 0.03));
+    const xLine = (x0, x1, z) => band([{ x: x0, z }, { x: x1, z }]);
+    xLine(X0, X1, HALF - IN); xLine(X0, AX, -(HALF - IN)); xLine(DX, X1, -(HALF - IN));
+    for (let x = AX + 0.5; x < DX - 0.5; x += 2) xLine(x, Math.min(x + 1, DX - 0.5), -(HALF - IN));
+    band([...arc(AX, -HALF - R1, R1 + IN, Math.PI / 2, 0), ...path.filter(p => p.s > R1 + 1e-6).map(p => at(p, -(wOf(p) - IN)))]);
+    band([...path.filter(p => p.s >= R2 - 1e-6).reverse().map(p => at(p, wOf(p) - IN)), ...arc(DX, -HALF - R2, R2 + IN, Math.PI, Math.PI / 2).slice(1)]);
+    const seg = (s0, s1) => path.filter(p => p.s >= s0 - 1e-6 && p.s <= s1 + 1e-6);
+    for (let s0 = 14; s0 + 3 < S - FLARE; s0 += 9) band(seg(s0, s0 + 3));
+    band(seg(S - FLARE, S), 0.075);
+    const lineM = white.clone(); lineM.polygonOffset = true; lineM.polygonOffsetFactor = -2; lineM.polygonOffsetUnits = -2;
+    g.add(new THREE.Mesh(mergeGeometries(line), lineM));
+  }
+  flat(22, HALF * 2 - 0.4, new THREE.MeshStandardMaterial({ color: 0x0c0d0f, roughness: 0.18, metalness: 0.3 }), -34, 0, 0.025);        // water box
   flat(0.25, HALF * 2, white, 0, 0, 0.03);
   for (const d of [DRAG.FT60, DRAG.FT330, DRAG.EIGHTH, DRAG.FT1000, DRAG.QUARTER]) flat(d === DRAG.EIGHTH || d === DRAG.QUARTER ? 0.5 : 0.12, HALF * 2, white, d, 0, 0.03);
   const chk = tex(64, 32, (c) => { for (let x = 0; x < 8; x++) for (let y = 0; y < 4; y++) { c.fillStyle = (x + y) % 2 ? '#111' : '#f4f4f4'; c.fillRect(x * 8, y * 8, 8, 8); } }, 8, 1);
@@ -453,17 +574,18 @@ function buildDrag(renderer, opts = {}) {
   // sand trap at the very end
   flat(110, HALF * 2, M(0xb7a273, 1), X1 - 55, 0, 0.04);
 
-  // walls with distance boards
-  const wallM = M(0xc9ccd1, 0.8);
+  // walls: concrete along both sides and across the far end, open at the start (staging lanes) and at the
+  // turn-off. This list is what the cars collide with, so what you see is what stops you.
+  const wallM = M(0xc9ccd1, 0.8), WZ = HALF + 0.25;
+  const walls = [[X0, WZ, X1, WZ, 0.25], [X0, -WZ, AX, -WZ, 0.25], [DX, -WZ, X1, -WZ, 0.25], [X1 + 0.3, -WZ - 0.25, X1 + 0.3, WZ + 0.25, 0.3]];
+  for (const [ax, az, bx, bz, t] of walls) { const l = Math.hypot(bx - ax, bz - az); box(l, 1.0, t * 2, wallM, (ax + bx) / 2, 0.5, (az + bz) / 2, -Math.atan2(bz - az, bx - ax)); }
   for (const s of [1, -1]) {
-    box(X1 - X0, 1.0, 0.5, wallM, (X0 + X1) / 2, 0.5, s * (HALF + 0.25));
     for (const [d, label] of [[DRAG.FT60, "60'"], [DRAG.FT330, "330'"], [DRAG.EIGHTH, '1/8'], [DRAG.FT1000, "1000'"], [DRAG.QUARTER, '1/4']]) {
       const t = tex(128, 64, (c, w, h) => { c.fillStyle = '#ff5a1f'; c.fillRect(0, 0, w, h); c.fillStyle = '#111'; c.font = '900 44px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(label, w / 2, h / 2 + 2); });
       const b = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ map: t, color: night ? 0xb0b0b0 : 0xffffff })); b.position.set(d, 1.9, s * (HALF + 0.3)); b.rotation.y = s > 0 ? Math.PI : 0; g.add(b);
       box(0.12, 1.3, 0.12, M(0x2a2d33), d, 1.3, s * (HALF + 0.3));
     }
   }
-  box(0.6, 1.2, HALF * 2 + 1, wallM, X1 + 0.3, 0.6, 0); box(0.6, 1.2, HALF * 2 + 1, wallM, X0 - 0.3, 0.6, 0);
 
   // Christmas tree: per lane — 2 pre-stage, 2 stage, 3 ambers, green, red
   const tree = new THREE.Group(); tree.position.set(13, 0, 0); g.add(tree);
@@ -531,11 +653,95 @@ function buildDrag(renderer, opts = {}) {
   // surroundings
   const grass = tex(256, 256, (c, w, h) => { c.fillStyle = night ? '#16261a' : '#3f6a2c'; c.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { c.fillStyle = night ? `rgba(${20 + Math.random() * 20},${40 + Math.random() * 30},${20 + Math.random() * 20},0.5)` : `rgba(${40 + Math.random() * 50},${90 + Math.random() * 70},${30 + Math.random() * 30},0.5)`; c.fillRect(Math.random() * w, Math.random() * h, 2, 3); } }, 200, 200);
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200), new THREE.MeshStandardMaterial({ map: grass, roughness: 1 })); ground.rotation.x = -Math.PI / 2; ground.position.set(500, -0.01, 0); ground.receiveShadow = true; g.add(ground);
-  flat(1300, 9, M(0x33353a, 0.9), 500, -(HALF + 46), 0.01);                    // return road
-  const spots = []; while (spots.length < 320) { const x = -300 + r() * 1700, z = (r() < 0.5 ? 1 : -1) * (60 + r() * 380); spots.push([x, z, 0.7 + r() * 0.9]); }
+  const nearRoad = (x, z, d) => { for (let i = 0; i < path.length; i += 3) if ((path[i].x - x) ** 2 + (path[i].z - z) ** 2 < d * d) return true; return false; };
+  const spots = []; while (spots.length < 320) { const x = -300 + r() * 1700, z = (r() < 0.5 ? 1 : -1) * (60 + r() * 380); if (!nearRoad(x, z, RW + 9)) spots.push([x, z, 0.7 + r() * 0.9]); }
   const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.35, 0.5, 3, 6), M(0x4a3626, 0.9), spots.length), leaves = new THREE.InstancedMesh(new THREE.ConeGeometry(2.8, 8, 7), M(night ? 0x12261a : 0x244a1e, 0.9), spots.length), mt = new THREE.Matrix4();
   spots.forEach(([x, z, sc], i) => { mt.makeScale(sc, sc, sc).setPosition(x, 1.5 * sc, z); trunks.setMatrixAt(i, mt); mt.makeScale(sc, sc, sc).setPosition(x, 6.5 * sc, z); leaves.setMatrixAt(i, mt); });
   g.add(trunks, leaves);
+
+  // ---- facility: wall-end crash barrels, signs, junction lights and a perimeter fence
+  const FX0 = -190, FX1 = 1210, FZ0 = -95, FZ1 = 72;
+  const posts = [];                                                       // round obstacles [x, z, r]
+  const yb = tex(32, 64, (c, w, h) => { for (let i = 0; i < 4; i++) { c.fillStyle = i % 2 ? '#111' : '#f2c100'; c.fillRect(0, i * h / 4, w, h / 4); } });
+  const barrelG = new THREE.CylinderGeometry(0.32, 0.32, 0.95, 14), barrelM = new THREE.MeshStandardMaterial({ map: yb, roughness: 0.6 });
+  for (const [x, z] of [[X0 - 0.34, WZ], [X0 - 0.34, -WZ], [AX - 0.34, -WZ], [DX + 0.34, -WZ]]) { const b = new THREE.Mesh(barrelG, barrelM); b.position.set(x, 0.475, z); b.castShadow = true; g.add(b); posts.push([x, z, 0.32]); }
+  const signBoard = (text, sub, x, z, ry) => {
+    const t = tex(512, 160, (c, w, h) => { c.fillStyle = '#0b0c0f'; c.fillRect(0, 0, w, h); c.fillStyle = '#ff5a1f'; c.fillRect(0, h - 12, w, 12); c.fillStyle = '#fff'; c.font = '900 58px Arial'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, w / 2, 58); c.fillStyle = '#c9ced6'; c.font = '700 30px Arial'; c.fillText(sub, w / 2, 112); });
+    const grp = new THREE.Group(); grp.position.set(x, 0, z); grp.rotation.y = ry; g.add(grp);
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 1.5), new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide, color: night ? 0xb8b8b8 : 0xffffff })); b.position.y = 2.6; grp.add(b);
+    for (const dx of [-1.9, 1.9]) { const pst = new THREE.Mesh(new THREE.BoxGeometry(0.12, 2.6, 0.12), M(0x2a2d33, 0.5, 0.6)); pst.position.set(dx, 1.3, 0.02); grp.add(pst); posts.push([x + dx * Math.cos(ry), z - dx * Math.sin(ry), 0.12]); }
+  };
+  signBoard('RETURN ROAD', 'Exit here · back to staging', DX + 7, -HALF - 5, -Math.PI / 2);
+  signBoard('STAGING LANES', 'Burnout box · then stage', X0 - 26, HALF + 3.5, -Math.PI / 2);
+  // junction floodlights (lit at night)
+  for (const [x, z, px, pz] of [[X0 - 22, -HALF - 4.5, X0 - 22, 0], [-110 - 39, -27.8, -110 - 28, -27.8], [XM + 16, -HALF - 30, XM - 2, -HALF - 30]]) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 14, 8), M(0x2a2d33, 0.5, 0.7)); pole.position.set(x, 7, z); g.add(pole); posts.push([x, z, 0.22]);
+    const hd = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 1.2), new THREE.MeshBasicMaterial({ color: night ? 0xfff3d6 : 0x9a9da3 })); hd.position.set(x + (px - x) * 0.08, 14.1, z + (pz - z) * 0.08); g.add(hd);
+    if (night) { const pt = tex(64, 64, (c, w) => { const gr = c.createRadialGradient(w / 2, w / 2, 2, w / 2, w / 2, w / 2); gr.addColorStop(0, 'rgba(255,240,210,0.42)'); gr.addColorStop(1, 'rgba(255,240,210,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, w); });
+      const pool = new THREE.Mesh(new THREE.PlaneGeometry(34, 34), new THREE.MeshBasicMaterial({ map: pt, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); pool.rotation.x = -Math.PI / 2; pool.position.set(px, 0.05, pz); pool.renderOrder = 1; g.add(pool); }
+  }
+  // perimeter fence
+  const fence = [[FX0, FZ0, FX1, FZ0], [FX1, FZ0, FX1, FZ1], [FX1, FZ1, FX0, FZ1], [FX0, FZ1, FX0, FZ0]];
+  {
+    const fM = M(0x3a3d44, 0.6, 0.6), fp = []; for (const [ax, az, bx, bz] of fence) { const l = Math.hypot(bx - ax, bz - az), n = Math.ceil(l / 5); for (let i = 0; i < n; i++) fp.push([ax + (bx - ax) * i / n, az + (bz - az) * i / n]); }
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(0.1, 1.4, 0.1), fM, fp.length), d = new THREE.Object3D();
+    fp.forEach(([x, z], i) => { d.position.set(x, 0.7, z); d.updateMatrix(); im.setMatrixAt(i, d.matrix); }); g.add(im);
+    for (const [ax, az, bx, bz] of fence) for (const y of [0.55, 1.3]) { const l = Math.hypot(bx - ax, bz - az); box(l, 0.06, 0.06, fM, (ax + bx) / 2, y, (az + bz) / 2, -Math.atan2(bz - az, bx - ax)); }
+    for (const [ax, az, bx, bz] of fence) walls.push([ax, az, bx, bz, 0.1]);
+  }
+  // other solid things near where cars can now drive
+  const boxes = [[-26.5, -17.5, -(HALF + 12.5), -(HALF + 5.5)]];             // timing tower
+  for (const sd of [1, -1]) boxes.push([10, 200, sd > 0 ? HALF + 6 : -(HALF + 22), sd > 0 ? HALF + 22 : -(HALF + 6)]);   // grandstands
+  for (const sd of [1, -1]) { posts.push([-52, sd * (HALF + 1), 0.25], [DRAG.QUARTER + 45, sd * (HALF + 5), 0.25]); }
+  for (const [x, sd] of poles) posts.push([x, sd * (HALF + 3), 0.22]);
+  for (const [x, z, sc] of spots) if (x > FX0 && x < FX1 && z > FZ0 && z < FZ1) posts.push([x, z, 0.5 * sc]);
+
+  // ---- collision: the car is three circles along its length; walls are capsules (so wall ends are
+  // rounded and nothing snags), and a move that crosses a wall's centre line since the last frame is
+  // caught even at very low frame rates.
+  const CR = 0.95, pose = { psi: 0, len: 4.5 }; let last = null;
+  const crossT = (p0x, p0z, p1x, p1z, ax, az, bx, bz) => {
+    const rx = p1x - p0x, rz = p1z - p0z, sx = bx - ax, sz = bz - az, den = rx * sz - rz * sx; if (Math.abs(den) < 1e-12) return false;
+    const t = ((ax - p0x) * sz - (az - p0z) * sx) / den, u = ((ax - p0x) * rz - (az - p0z) * rx) / den; return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  };
+  const collide = (x, z) => {
+    const psi = pose.psi, k = Math.max(0, pose.len / 2 - CR), offs = k ? [0, k, -k] : [0];
+    const prev = last && Math.hypot(last.x - x, last.z - z) < 400 ? last : null;  // resets call resetCollision(), so this only guards against nonsense
+    let cx = x, cz = z, sx = 0, sz = 0;
+    const shove = (dx, dz) => { cx += dx; cz += dz; sx += dx; sz += dz; };
+    for (let iter = 0; iter < 3; iter++) {
+      let moved = false;
+      for (const o of offs) {
+        const fx = Math.cos(psi) * o, fz = -Math.sin(psi) * o;
+        const qx = prev ? prev.x + Math.cos(prev.psi) * o : null, qz = prev ? prev.z - Math.sin(prev.psi) * o : null;
+        for (const [ax, az, bx, bz, t] of walls) {
+          const px = cx + fx, pz = cz + fz, c = t + CR, wx = bx - ax, wz = bz - az, wl = Math.hypot(wx, wz), nx = -wz / wl, nz = wx / wl;
+          if (prev && crossT(qx, qz, px, pz, ax, az, bx, bz)) {                // went through the wall: put it back on its own side
+            const side = Math.sign((qx - ax) * nx + (qz - az) * nz) || 1, d = (px - ax) * nx + (pz - az) * nz;
+            shove(nx * (side * c - d), nz * (side * c - d)); moved = true; continue;
+          }
+          const L2 = wl * wl, tt = Math.max(0, Math.min(1, ((px - ax) * wx + (pz - az) * wz) / L2)), qx2 = ax + wx * tt, qz2 = az + wz * tt;
+          let dx = px - qx2, dz = pz - qz2, d = Math.hypot(dx, dz);
+          if (d < c) { if (d < 1e-6) { const side = prev ? Math.sign((qx - ax) * nx + (qz - az) * nz) || 1 : 1; dx = nx * side; dz = nz * side; d = 1; shove(dx * c, dz * c); } else shove(dx / d * (c - d), dz / d * (c - d)); moved = true; }
+        }
+        for (const [x0, x1, z0, z1] of boxes) {
+          const px = cx + fx, pz = cz + fz; if (px < x0 - CR || px > x1 + CR || pz < z0 - CR || pz > z1 + CR) continue;
+          const qx2 = Math.max(x0, Math.min(x1, px)), qz2 = Math.max(z0, Math.min(z1, pz)); let dx = px - qx2, dz = pz - qz2, d = Math.hypot(dx, dz);
+          if (d >= CR) continue;
+          if (d < 1e-6) { const e = [[px - x0, -1, 0], [x1 - px, 1, 0], [pz - z0, 0, -1], [z1 - pz, 0, 1]].sort((a, b) => a[0] - b[0])[0]; shove(e[1] * (e[0] + CR), e[2] * (e[0] + CR)); }
+          else shove(dx / d * (CR - d), dz / d * (CR - d));
+          moved = true;
+        }
+        for (const [ox, oz, r] of posts) {
+          const px = cx + fx, pz = cz + fz, dx = px - ox, dz = pz - oz, d = Math.hypot(dx, dz), c = r + CR;
+          if (d < c && d > 1e-6) { shove(dx / d * (c - d), dz / d * (c - d)); moved = true; }
+        }
+      }
+      if (!moved) break;
+    }
+    last = { x: cx, z: cz, psi };
+    const sl = Math.hypot(sx, sz); return sl > 1e-9 ? { x: cx, z: cz, nx: sx / sl, nz: sz / sl } : null;
+  };
 
   const sunDir = night ? new THREE.Vector3(-0.3, 0.85, 0.3).normalize() : new THREE.Vector3(-0.4, 0.75, 0.4).normalize();
   const dome = night ? skyDome('#03040a', '#141a33', '#0a0d0b') : skyDome('#3b78c7', '#bcd9ef', '#6f8f63', { dir: sunDir, size: 60, color: 0xfff6dd }); g.add(dome);
@@ -544,19 +750,22 @@ function buildDrag(renderer, opts = {}) {
   const glow = night ? [0, 1, 2].map(i => { const m = new THREE.Mesh(new THREE.PlaneGeometry(26, 1.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff0d0).multiplyScalar(7), side: THREE.DoubleSide })); m.position.set(0, 11, (i - 1) * 7); m.rotation.x = Math.PI / 2; return m; }) : [];
 
   let lane = 0;
-  const LIM = HALF - 0.95;
   return {
     name: night ? 'Apex Dragway · Night' : 'Apex Dragway', group: g, sun, sunDir, env: envFrom(renderer, dome, glow), fog: night ? new THREE.Fog(0x070a12, 160, 1300) : new THREE.Fog(0xbcd9ef, 400, 2200), night, hasLaps: false, drag: true,
     setTree, showResult: (l, et, spd, win) => boards[l](et, spd, win), clearBoards: () => boards.forEach(b => b('-.---', '---', false)),
     setLane(l) { lane = l ? 1 : 0; },
     get spawn() { return { x: -7, z: (lane ? 1 : -1) * DRAG.LANE, psi: 0 }; },
-    reset() { },
-    surface(x, z) { const sand = x > X1 - 110; return { grip: sand ? 0.7 : x < 440 ? 1.12 : 1, drag: sand ? 2.6 : 0, off: sand ? 1 : 0, lap: false, line: false }; },
-    collide(x, z) {
-      if (Math.abs(z) <= LIM && x >= X0 + 2.4 && x <= X1 - 2.4) return null;
-      const cx = Math.max(X0 + 2.4, Math.min(X1 - 2.4, x)), cz = Math.max(-LIM, Math.min(LIM, z));
-      return { x: cx, z: cz, nx: x !== cx ? -Math.sign(x - cx) : 0, nz: z !== cz ? -Math.sign(z - cz) : 0 };
+    reset() { last = null; },
+    resetCollision(x, z, psi) { last = x === undefined ? null : { x, z, psi }; },   // placing the car: sweep from where it was put
+    setPose(psi, len) { pose.psi = psi; pose.len = len || 4.5; },
+    surface(x, z) {
+      if (onStrip(x, z)) { const sand = x > X1 - 110; return { grip: sand ? 0.7 : x < 440 ? 1.12 : 1, drag: sand ? 2.6 : 0, off: sand ? 1 : 0, lap: false, line: false }; }
+      if (onRoad(x, z)) return { grip: 1, drag: 0, off: 0, lap: false, line: false };
+      return { grip: 0.6, drag: 1, off: 1, lap: false, line: false };       // grass
     },
+    collide,
+    onStrip, onRoad,
+    layout: { path, outline, walls, boxes, posts, X0, X1, HALF, XM, AX, DX, RW, RZ, fence: [FX0, FX1, FZ0, FZ1] },
     respawn() { return this.spawn; },
   };
 }

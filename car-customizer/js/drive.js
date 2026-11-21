@@ -202,7 +202,7 @@ export class Drive {
     return res;
   }
 
-  place(p) { Object.assign(this.s, { x: p.x, z: p.z, psi: p.psi, vx: 0, vy: 0, r: 0, gear: 1, st: 0, driftT: 0, boost: 0 }); }
+  place(p) { Object.assign(this.s, { x: p.x, z: p.z, psi: p.psi, vx: 0, vy: 0, r: 0, gear: 1, st: 0, driftT: 0, boost: 0 }); if (this.world && this.world.resetCollision) this.world.resetCollision(p.x, p.z, p.psi); }
   respawn() { this.place(this.world.respawn()); this.score.wall(); this.justReset = 0.4; if (this.chute.state !== 'none') { this.chute.state = 'packed'; this.chute.open = 0; } if (this.race) { this.race.reset(); this.world.clearBoards(); } }
   /** Cycle Third-person → Cockpit → Hood. The view glides from the old pose to the new one. Returns the new mode. */
   nextCamera() { return this.setCamera((this.camMode + 1) % CAMERA_MODES.length); }
@@ -434,6 +434,7 @@ export class Drive {
     for (let i = 0; i < n; i++) this._step(dt / n, inp, surf);
 
     // --- walls and buildings
+    if (world.setPose) world.setPose(s.psi, P.len);              // worlds with full-body collision need the car's heading and length
     const hit = world.collide(s.x, s.z);
     if (hit) {
       const cp = Math.cos(s.psi), sp = Math.sin(s.psi);
@@ -477,7 +478,7 @@ export class Drive {
     if (!this.race) this.score.tick(dt, kmh, s.vx > 3 ? Math.abs(s.beta) * 57.3 : 0, surf.off < 0.5);
     // staging help: creep into the beams off the throttle and the line-lock stops the car in them
     if (this.race && this.race.state === 'staging' && !inp.fwd) { const f = s.x + this.noseX; if (f >= 0.04 && f < 0.27 && Math.abs(s.vx) < 2.5) { s.vx = 0; s.vy = 0; s.r = 0; } }
-    const dragInfo = this.race ? this.race.update(dt, s.x + this.noseX, s.vx) : null;
+    const dragInfo = this.race ? this.race.update(dt, s.x + this.noseX, s.vx, world.onStrip ? world.onStrip(s.x, s.z) : true) : null;
     car.chute.update(dt, this.chute.open, Math.hypot(s.vx, s.vy), this.chute.state === 'open' || this.chute.state === 'repack');
 
     // --- lap timing

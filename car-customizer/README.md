@@ -77,6 +77,11 @@ how it accelerates, grips and slides.
 
 - **Apex Dragway** — quarter-mile strip with staging beams, a Christmas tree, timing boards
   and a shutdown area with a sand trap. Day or night. See *Drag racing* below.
+  A return road loops round the facility: after a run, take the turn-off on the left of the
+  shutdown area (signposted *Return Road*), follow the road back past the pits, round behind
+  the start and into the staging lanes, which lead through the burnout box to the start line.
+  You can drive it either way. Grass is drivable but slow; the strip walls, buildings, poles
+  and perimeter fence are solid.
 - **Midnight Expressway** — a 6 km four-lane expressway loop at night with AI traffic, a
   suspension bridge over a river, two tunnels, overhead signs and a city on both sides.
   Traffic keeps a safe gap, changes lane to pass slower vehicles and reacts to you.

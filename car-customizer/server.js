@@ -208,7 +208,7 @@ function onDrag(c, m) {
     // the run must be physically possible, must fit the wall clock since the green light, and the
     // position stream must show the car actually reached the far end of the strip
     const elapsed = (t - race.green) / 1000, tooQuick = ok && (m.et < D.minEt || m.trap > 560);
-    const clock = ok && Math.abs(elapsed - (m.rt + m.et)) > 2.5, travelled = c.lastPos && c.lastPos[0] > D.m - 80;
+    const clock = ok && Math.abs(elapsed - (m.rt + m.et)) > 2.5, travelled = c.lastPos && c.lastPos[0] > D.m - 80 && Math.abs(c.lastPos[1]) < 12;   // ...and was on the strip, not the return road
     if (!ok || tooQuick || clock || !travelled) {
       race.results.set(c.id, { id: c.id, name: c.name, rejected: true });
       log(`  drag ${room.id}: rejected ${c.name} — rt ${m.rt} et ${m.et}, wall clock ${elapsed.toFixed(2)} s, reached x=${c.lastPos ? Math.round(c.lastPos[0]) : 'n/a'}`);

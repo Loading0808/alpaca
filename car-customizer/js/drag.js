@@ -44,7 +44,7 @@ export class DragRace {
    * front = x position of the car's nose (the start line is x = 0), v = forward speed (m/s).
    * Returns the lights for this lane and live timing for the HUD.
    */
-  update(dt, front, v) {
+  update(dt, front, v, onStrip = true) {
     const t0 = this.t, t1 = (this.t += dt), prev = this.prevFront ?? front; this.prevFront = front;
     const crossed = line => prev < line && front >= line ? t0 + (line - prev) / Math.max(1e-6, front - prev) * dt : null;   // exact crossing time within the frame
 
@@ -65,6 +65,7 @@ export class DragRace {
       } else if (this.deep) { if (!this.deepWarned) this._emit('Rolled through the beams — back up behind the line (hold S)', 'bad'); this.deepWarned = true; this.prevFront = front; }
       else if (front < 0.9) this.deepWarned = false;
     }
+    if (this.state === 'run' && !onStrip) { this._emit('Left the racing surface — run aborted', 'bad'); this.reset(); this.world.clearBoards(); }
     if (this.state === 'run') {
       for (const [k, d] of SPLITS) {
         if (d > this.dist.m + 0.01 || this.splits[k] != null) continue;
