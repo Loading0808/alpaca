@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Game Hub</title>
+  <meta name="description" content="Games to play in your browser." />
+  <link rel="icon" href="site/icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="site/style.css" />
+</head>
+<body class="home">
+  <a class="skip" href="#games">Skip to games</a>
+  <header class="top">
+    <a class="logo" href="./"><span class="logo-mark" aria-hidden="true"></span><span data-site="name">Game Hub</span></a>
+    <nav><a href="#games">Games</a></nav>
+  </header>
+
+  <main>
+    <section class="hero" id="featured" aria-label="Featured game"></section>
+
+    <section class="library" id="games" aria-labelledby="gamesTitle">
+      <div class="lib-head">
+        <div>
+          <h2 id="gamesTitle">All games</h2>
+          <p class="muted" id="count"></p>
+        </div>
+        <div class="filters">
+          <label class="search"><span class="sr">Search games</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="search" id="search" placeholder="Search games" autocomplete="off" />
+          </label>
+          <div class="tags" id="tags" role="group" aria-label="Filter by tag"></div>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <p class="empty" id="empty" hidden>No games match that. Try another word or tag.</p>
+    </section>
+  </main>
+
+  <footer class="foot"><span data-site="footer"></span></footer>
+
+  <script src="games.js"></script>
+  <script src="site/app.js"></script>
+</body>
+</html>

@@ -3,6 +3,9 @@
 //
 //   node server.js            → http://localhost:5173  (set PORT to change it)
 //
+// It serves this folder, or a whole website when started through the site's own server.js
+// (which sets STATIC_ROOT) — then the game lives at /car-customizer/ and multiplayer still works.
+//
 // The server is authoritative for rooms, membership, names, chat and the
 // multiplayer leaderboard, and it validates everything a client sends:
 // message size and rate, value ranges, movement (speed / teleport checks) and
@@ -13,24 +16,37 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = process.env.PORT || 5173;
-const ROOT = __dirname;
+const ROOT = path.resolve(process.env.STATIC_ROOT || __dirname);
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
+  // common file types for other games on the site
+  '.mjs': 'text/javascript; charset=utf-8', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.avif': 'image/avif',
+  '.mp3': 'audio/mpeg', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.m4a': 'audio/mp4', '.mp4': 'video/mp4', '.webm': 'video/webm',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf', '.wasm': 'application/wasm',
+  '.txt': 'text/plain; charset=utf-8', '.xml': 'application/xml', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream',
 };
 const PRIVATE_FILES = new Set(['server.js', 'mp-scores.json', 'package.json']);
 
 const server = http.createServer((req, res) => {
   let url; try { url = decodeURIComponent(req.url.split('?')[0]); } catch (_) { res.writeHead(400); return res.end('Bad request'); }
   if (url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ ok: true, players: clients.size, rooms: rooms.size })); }
-  const file = path.normalize(path.join(ROOT, url === '/' ? 'index.html' : url));
-  if (!file.startsWith(ROOT + path.sep) || PRIVATE_FILES.has(path.basename(file)) || path.basename(file).startsWith('.')) { res.writeHead(403); return res.end('Forbidden'); }
+  const file = path.normalize(path.join(ROOT, url.endsWith('/') ? url + 'index.html' : url));
+  // never serve anything outside the site, server code, or hidden files and folders (.git, .env, .vscode …)
+  const rel = path.relative(ROOT, file);
+  if (rel.startsWith('..') || path.isAbsolute(rel) || PRIVATE_FILES.has(path.basename(file)) || rel.split(path.sep).some(p => p.startsWith('.'))) { res.writeHead(403); return res.end('Forbidden'); }
+  fs.stat(file, (e, st) => {
+    if (!e && st.isDirectory()) { res.writeHead(301, { Location: url + '/' }); return res.end(); }   // /car-customizer → /car-customizer/
+    send404OrFile(file, res);
+  });
+});
+function send404OrFile(file, res) {
   fs.readFile(file, (err, data) => {
     if (err) { res.writeHead(404); return res.end('Not found'); }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(data);
   });
-});
+}
 
 // ---------------------------------------------------------------------------
 // Minimal WebSocket layer
@@ -82,7 +98,7 @@ function wsReader(socket, onText, onClose) {
 const MAX_PLAYERS = 8, TICK_MS = 66, TIMEOUT_MS = 30000;
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const BOUNDS = { x: 2600, z: 2600, yMin: -10, yMax: 80, speed: 140 };   // generous limits for the expressway map
-const SCORE_FILE = path.join(ROOT, 'mp-scores.json');
+const SCORE_FILE = path.join(__dirname, 'mp-scores.json');
 const clients = new Map(), rooms = new Map();
 let nextId = 1, topScores = [], topDrag = { quarter: [], eighth: [] }, dragSeq = 1;
 try {
@@ -292,4 +308,6 @@ setInterval(() => {
   }
 }, TICK_MS);
 
-server.listen(PORT, () => console.log(`APEX GARAGE running at http://localhost:${PORT}  (multiplayer on ws://localhost:${PORT}/ws)`));
+server.listen(PORT, () => console.log(process.env.STATIC_ROOT
+  ? `Game site running at http://localhost:${PORT}  (Apex Garage multiplayer on ws://localhost:${PORT}/ws)`
+  : `APEX GARAGE running at http://localhost:${PORT}  (multiplayer on ws://localhost:${PORT}/ws)`));

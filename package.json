@@ -1,0 +1,12 @@
+{
+  "name": "game-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A website for my browser games",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
