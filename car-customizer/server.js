@@ -16,7 +16,11 @@ const path = require('path');
 const crypto = require('crypto');
 
 const PORT = process.env.PORT || 5173;
-const ROOT = path.resolve(process.env.STATIC_ROOT || __dirname);
+// If this game sits inside the game website (the folder above has games.js and play.html), serve the
+// whole website — so http://localhost:5173 opens the site whichever server.js you start.
+const PARENT = path.resolve(__dirname, '..');
+const IN_SITE = fs.existsSync(path.join(PARENT, 'games.js')) && fs.existsSync(path.join(PARENT, 'play.html'));
+const ROOT = path.resolve(process.env.STATIC_ROOT || (IN_SITE ? PARENT : __dirname));
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon',
@@ -308,6 +312,15 @@ setInterval(() => {
   }
 }, TICK_MS);
 
-server.listen(PORT, () => console.log(process.env.STATIC_ROOT
-  ? `Game site running at http://localhost:${PORT}  (Apex Garage multiplayer on ws://localhost:${PORT}/ws)`
+server.on('error', e => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`\nPort ${PORT} is already in use — another copy of the server is still running.\n` +
+      `Close the other terminal (or click in it and press Ctrl+C), then run node server.js again.\n` +
+      `Or use a different port, e.g.  PORT=5174 node server.js  (Windows PowerShell:  $env:PORT=5174; node server.js)\n`);
+    process.exit(1);
+  }
+  throw e;
+});
+server.listen(PORT, () => console.log(ROOT !== __dirname
+  ? `Game site running at http://localhost:${PORT}   (Apex Garage: http://localhost:${PORT}/car-customizer/ · multiplayer on ws://localhost:${PORT}/ws)`
   : `APEX GARAGE running at http://localhost:${PORT}  (multiplayer on ws://localhost:${PORT}/ws)`));
