@@ -1,7 +1,12 @@
 # Game Hub
 
-A website for your browser games. It has a home page with every game (search and tags) and a
-play page for each one with a built-in player, fullscreen button, screenshots and controls.
+A browser-game portal for your own games, in black, red and orange: a top bar with search
+and a *Random* button, a sidebar with Home, Recently played, Favourites, New and your
+categories, a featured-game banner, and a grid of square game tiles (featured games get a big
+tile; hovering flips through screenshots). Each game has its own page with a big player, a
+splash screen with a Play button, Favourite / Share / Restart / New tab / Fullscreen, more
+games, the description, screenshots and controls. Recently played and favourites are
+remembered in each visitor's browser.
 **Apex Garage** is the first game on it; its own files and instructions are in
 [`car-customizer/`](car-customizer/README.md).
 
@@ -26,15 +31,19 @@ play page for each one with a built-in player, fullscreen button, screenshots an
    HTML page, e.g. `my-game/index.html`, and use relative paths for its files (`js/game.js`, not
    `/js/game.js`).
 2. Open `games.js`. At the bottom there is a **TEMPLATE** — copy it into the `GAMES` list and fill
-   it in: `id`, `title`, `path` (e.g. `my-game/index.html`), a short line, a description, tags
-   and controls.
+   it in: `id`, `title`, `path` (e.g. `my-game/index.html`), a short line, a description,
+   `category` (its main group in the sidebar), `tags` (extra groups), controls, and optionally a
+   `badge` such as `'NEW'` and `keyboard: true` (phone visitors are told it needs a keyboard).
 3. Optional: put a 16:9 cover picture (1280 × 720 works well) in `site/covers/` and set `cover`.
    Without one, a coloured tile with the game's initials is shown. Extra pictures go in `screenshots`.
 4. Save and refresh the browser. Set `featured: true` on the game you want shown big at the top.
 
-The dashed **Add a game** card on the home page is only visible on your own computer.
+Until you have more games, dimmed **Coming soon** tiles fill the first two rows of the grid; turn
+them off with `comingSoon: false` at the top of `games.js`. The dashed note under the grid is
+only visible on your own computer.
 
-Change the site name, tagline and footer at the top of `games.js` (`window.SITE`).
+Change the site name and footer at the top of `games.js` (`window.SITE`). The colours are at the
+top of `site/style.css` (`--red`, `--orange`, `--bg`).
 
 ## Put it online
 
