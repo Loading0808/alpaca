@@ -61,6 +61,39 @@ window.GAMES = [
     featured: true,
   },
 
+  {
+    id: 'apex-drift',
+    title: 'Apex Drift',
+    path: 'apex-drift/index.html',
+    cover: 'site/covers/apex-drift.jpg',
+    screenshots: [
+      'site/covers/apex-drift-hud.jpg',
+      'site/covers/apex-drift-neon.jpg',
+      'site/covers/apex-drift-harbor.jpg',
+    ],
+    category: 'Racing',
+    tags: ['Arcade', 'Drifting'],
+    badge: 'NEW',
+    short: 'Top-down arcade drifting: throw it sideways, chain the corners and stack the multiplier.',
+    description: [
+      'A fast top-down drift racer. Kick the tail out with the handbrake, hold the slide on the throttle and chain corner after corner. Points grow with speed and angle, the multiplier climbs to ×5 the longer you slide, and a hard hit on the wall or a trip onto the grass throws the combo away.',
+      'Race three tracks (a harbour loop by day, canyon hairpins at dusk and a neon city ring at night) in Drift Attack, Time Attack against your best-lap ghost, or Free Drift. Win medals, earn XP and unlock four cars, each with its own handling and paint.',
+    ],
+    controls: [
+      ['W / ↑', 'Throttle'],
+      ['S / ↓', 'Brake / reverse'],
+      ['A D / ← →', 'Steer'],
+      ['Space', 'Handbrake (start a drift)'],
+      ['R', 'Back on the track'],
+      ['C', 'Change camera'],
+      ['Esc', 'Pause'],
+    ],
+    notes: 'Works with a gamepad, and on phones with on-screen buttons (turn the phone sideways).',
+    keyboard: false,
+    year: 2026,
+    featured: true,
+  },
+
   /* ---------------------------------------------------------------------------
   TEMPLATE — copy everything between the curly brackets (including the comma
   after the closing bracket) into the list above, then fill it in.
