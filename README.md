@@ -10,7 +10,7 @@ remembered in each visitor's browser.
 Games on it so far:
 
 - **Apex Garage**: a 3D car-tuning and driving game, in [`car-customizer/`](car-customizer/README.md).
-- **Apex Drift**: a top-down arcade drift racer, in [`apex-drift/`](apex-drift/README.md).
+- **Apex Drift**: the drifting game built on Apex Garage (same cars, garage and locations), in [`apex-drift/`](apex-drift/README.md).
 
 ## Run it in VS Code
 

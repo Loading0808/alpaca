@@ -1,84 +1,74 @@
-# APEX DRIFT — top-down arcade drift racer
+# APEX DRIFT — the drifting game from the Apex Garage workshop
 
-A fast top-down drifting game in plain **HTML, CSS and JavaScript** (canvas 2D). No libraries,
-no build step and no downloaded files: the tracks, cars and scenery are drawn in code, and every
-sound is made live with the Web Audio API.
+Apex Drift is built **on top of Apex Garage**: the same 3D garage, the same 32 cars, the same locations,
+driving physics, cameras, engine sounds and look. Instead of building cars, you drift them.
+
+- **Any car from Apex Garage**, stock, with a choice of paint, or **your own builds**: every car you saved
+  in Apex Garage (Save / My Cars) shows up under *My Builds*, with all its parts, tuning and paint. Engine
+  swaps, turbos, tyres and stance all change how it slides.
+- **Three locations** from Apex Garage: Apex Raceway (day), Neon District (night city) and the Midnight
+  Expressway (with traffic).
+- **Drift Attack**: three laps on the raceway, or two minutes in the city or on the expressway, for a
+  bronze, silver or gold medal. **Free Drift**: no clock; press Esc to bank your points.
+- **Scoring**: points grow with slide angle × speed. Keep sliding and the multiplier climbs to ×5 (one step
+  every 2.2 s). Straighten up for about a second and the drift is banked. A hard wall hit, a crash, a
+  reset or running off the road loses the drift in progress. On the expressway, drifting close past
+  traffic adds a bonus.
+- **Records** (best score per location and mode, best single drift, career points) are saved in the browser.
 
 ## Play it
 
-It is part of the game site: from the site folder (the one with `games.js`), run
+From the site folder (the one with `games.js`):
 
 ```bash
 node server.js
 ```
 
-and open <http://localhost:5173>, then pick **Apex Drift**. You can also open
-<http://localhost:5173/apex-drift/> directly. (The page uses JavaScript modules, so double-clicking
-`index.html` won't work; it has to come from a server. VS Code's *Live Server* also works.)
+Open <http://localhost:5173> and pick **Apex Drift**, or go straight to <http://localhost:5173/apex-drift/>.
+It must be served by the site, because it loads Apex Garage's files from `../car-customizer/`.
 
-## How to play
+## Controls
 
 | Action | Keyboard | Gamepad |
 | --- | --- | --- |
 | Throttle | `W` / `↑` | Right trigger |
 | Brake, then reverse | `S` / `↓` | Left trigger |
 | Steer | `A` `D` / `←` `→` | Left stick |
-| Handbrake (starts a drift) | `Space` | A / B / RB |
-| Back on the track | `R` | Y |
-| Top-down ↔ chase camera | `C` | X |
+| Handbrake (start a drift) | `Space` | A / RB |
+| Shift up / down (semi-auto and manual) | `E` / `Q` | |
+| Clutch (manual) | `Left Shift` | |
+| Camera: third-person / cockpit / hood | `C` | X |
+| Third-person distance | `B` | |
+| Back on the road | `R` | Y |
 | Sound on / off | `M` | |
-| Pause | `Esc` / `P` | Start |
+| End the run, back to the garage | `Esc` | Start |
+| Start drifting (in the garage) | `Enter` | Start |
 
-On phones and tablets, on-screen buttons appear (turn the phone sideways).
-
-**Drifting:** come into a corner fast, tap the handbrake as you turn in, then stay on the throttle
-and steer to hold the angle. Let go of the steering to straighten up; steer the other way to catch a
-slide. Points grow with speed × angle. Keep sliding and the multiplier climbs to ×5. Straighten up
-for about a second and the combo is banked. Hit a wall hard or run onto the grass and it's lost.
-Sliding with the rear close to a wall gives a ×1.5 *Wall Kiss* bonus.
-
-**Modes**
-
-- **Drift Attack** — three laps, highest score wins a bronze, silver or gold medal.
-- **Time Attack** — three laps against the clock; your best lap on each track comes back as a ghost.
-- **Free Drift** — no laps, no clock. End the session from the pause menu to bank your points.
-
-**Tracks:** Harbor Loop (day, wide and flowing), Canyon Hairpins (dusk, tight), Neon Ring (night).
-
-**Cars and XP:** every point you score is XP (plus a bonus for Time Attack and for medals). XP unlocks
-the Vandal R8 (25,000), Ronin GT (70,000) and Apex Zero (160,000). Each car has 8 paints.
-
-**Settings:** sound, drift assist (Off / Normal / Strong — helps you countersteer and stops spins),
-camera, and the best-lap ghost. Progress and settings are saved in the browser.
+Phones and tablets get on-screen buttons. The car uses Apex Garage's **Drift** driving mode
+(traction and stability control off, loose rear end, quick steering).
 
 ## Files
 
 ```
-index.html       page, HUD and menus
-css/style.css    styles (colours at the top)
-js/main.js       game loop, camera, drawing, HUD, menus
-js/car.js        car list, drift physics, autopilot, car drawing
-js/track.js      track list, spline geometry, track and scenery drawing
-js/race.js       laps, walls, grass, drift scoring, ghost recording
-js/fx.js         tyre smoke, sparks, skid marks
-js/audio.js      engine, tyres, hits and UI sounds
-js/input.js      keyboard, touch buttons and gamepad
-js/store.js      saved progress and settings
+index.html       garage screen, driving HUD, results
+css/drift.css    the extra styles (everything else is Apex Garage's css/style.css)
+js/main.js       the game: car and build picking, runs, countdown, laps / timer, HUD, results
+js/score.js      drift scoring (plugs into Apex Garage's Drive in place of its Score) and records
 ```
+
+Shared with Apex Garage (in `../car-customizer/`): `js/data.js` (cars), `scene.js` (garage), `car.js`,
+`body.js`, `wheels.js`, `materials.js` … (3D cars), `world.js` (locations), `drive.js` (physics and
+cameras), `audio.js` (engine sound), `stats.js`, `vendor/three`. Improvements to Apex Garage's cars,
+locations or handling show up in Apex Drift too.
 
 ### Changing things
 
-- **A new track:** add an entry to `TRACKS` in `js/track.js`. `pts` is a list of points (in metres)
-  the track passes through, in driving order; it is smoothed into a closed loop. Keep corners gentle
-  enough and different parts of the track far enough apart that the walls don't overlap.
-- **A new car:** add an entry to `CARS` in `js/car.js`. `power` is in kW, `grip` is tyre grip,
-  `slide` (0.6–0.85) is how much grip is left once sliding (lower = longer, easier drifts),
-  `unlock` is the XP needed.
-- **Scoring:** the numbers are in `SCORE` at the top of `js/race.js`; medal targets are in each track's
-  `medals`.
+- **Scoring rules:** `RULES` at the top of `js/score.js`. **Medal targets:** `TARGETS` in the same file.
+- **Drift Attack length:** `ATTACK_LAPS` and `ATTACK_TIME` near the top of `js/main.js`.
+- **Locations offered:** `LOCATIONS` in `js/main.js` (ids from Apex Garage's `WORLDS`).
 
 ### Screenshots
 
-`index.html?demo&track=neon&car=ronin` starts a race driven by the autopilot (any car, locked or not).
-Add `&shot` to hide the HUD and `&zoom=1.8` to move the camera closer. The cover pictures in
-`site/covers/apex-drift*.jpg` were made this way.
+`index.html?demo&world=circuit&car=s15` starts a Free Drift where a simple autopilot drives. Add `&shot`
+to hide the HUD, `&view=near` for the close chase camera, and `&steps=3` on slow machines (runs extra
+physics steps per frame). The pictures in `site/covers/apex-drift*.jpg` were made this way.

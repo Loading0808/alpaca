@@ -1,196 +1,123 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#0a0a0b">
-  <title>Apex Drift</title>
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>APEX DRIFT</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <!-- Apex Drift is built on Apex Garage: same cars, garage, locations, physics, sound and look -->
+  <link rel="stylesheet" href="../car-customizer/css/style.css" />
+  <link rel="stylesheet" href="css/drift.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "../car-customizer/vendor/three/three.module.min.js",
+        "three/addons/": "../car-customizer/vendor/three/addons/"
+      }
+    }
+  </script>
 </head>
 <body>
-  <canvas id="game" tabindex="0" aria-label="Apex Drift game view"></canvas>
+  <canvas id="view" tabindex="0"></canvas>
 
-  <!-- ===================================================== HUD -->
-  <div id="hud" hidden>
-    <div class="hud-tl panel">
-      <div class="row"><span class="lbl">LAP</span><b id="hLap">1/3</b></div>
-      <div class="big mono" id="hTime">0:00.000</div>
-      <div class="row small"><span class="lbl">BEST</span><span class="mono" id="hBest">—</span></div>
-      <div class="laps mono" id="hLaps"></div>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span><div><b>APEX DRIFT</b><small>Drift Works</small></div></div>
+    <div class="car-title"><small id="carBrand"></small><b id="carName"></b></div>
+    <div class="top-right">
+      <div class="cost"><small>Drift points</small><b id="points">0</b></div>
+      <button class="btn btn-drive" id="btnGo" title="Start drifting (Enter)">Drift</button>
+      <button class="btn" id="btnGarage" title="Open Apex Garage to build and save cars">Build cars</button>
     </div>
+  </header>
 
-    <div class="hud-tc" id="scoreBox">
-      <div class="score mono" id="hScore">0</div>
-      <div class="lbl">DRIFT SCORE</div>
+  <nav class="cats" id="cats" aria-label="Menu"></nav>
+
+  <aside class="panel" id="panel">
+    <div class="panel-head"><small id="panelIndex"></small><h2 id="panelTitle"></h2></div>
+    <div class="panel-body" id="panelBody"></div>
+  </aside>
+
+  <section class="dock">
+    <div class="dock-card stats" id="stats"></div>
+    <div class="dock-card console go-card">
+      <button class="start on" id="btnStart" title="Start drifting (Enter)"><span class="start-ring"></span><span>START<br>DRIFT</span></button>
+      <div class="go-info">
+        <small>Location</small><b id="goWorld"></b>
+        <small>Mode</small><b id="goMode"></b>
+        <small>Your best</small><b id="goBest"></b>
+      </div>
     </div>
-
-    <div class="hud-tr panel"><canvas id="mini" width="200" height="150" aria-hidden="true"></canvas></div>
-
-    <div class="combo" id="combo" aria-live="off">
-      <div class="combo-top"><span class="combo-pts mono" id="cPts">0</span><span class="combo-mult" id="cMult">×1</span></div>
-      <div class="combo-bar"><i id="cBar"></i></div>
-      <div class="combo-tag" id="cTag"></div>
+    <div class="dock-card views">
+      <div class="sec" style="margin-top:0">Driving tips</div>
+      <p class="tip" id="tip"></p>
     </div>
+  </section>
 
-    <div class="feed" id="feed" aria-live="polite"></div>
-    <div class="msg" id="msg"></div>
-
-    <div class="hud-br panel">
-      <div class="gear mono" id="hGear">1</div>
-      <div class="speed"><b class="mono" id="hSpeed">0</b><span class="lbl">KM/H</span></div>
-      <div class="angle" title="Drift angle"><i id="hAngle"></i></div>
+  <!-- ===================================================== driving HUD (Apex Garage layout) -->
+  <div class="drive-hud" id="driveHud">
+    <div class="hud-top">
+      <div class="hud-left">
+        <div class="hud-place"><small>Now drifting</small><b id="hudPlace"></b><small id="hudTrans" class="hud-trans"></small></div>
+      </div>
+      <div class="hud-mid">
+        <div class="hud-score">
+          <div><small>Score</small><b id="hudScore">0</b></div>
+          <div class="hud-mult-wrap"><b id="hudMult">×1</b><span class="combo"><u id="hudComboBar"></u></span></div>
+          <div><small>Best</small><b id="hudPb" class="dim">0</b></div>
+        </div>
+        <div class="hud-drift" id="hudDrift"></div>
+        <div class="hud-angle" id="hudAngleWrap"><i id="hudAngle"></i><small id="hudAngleTxt"></small></div>
+        <div class="hud-feed" id="hudFeed" aria-live="polite"></div>
+      </div>
+      <div class="hud-right">
+        <div class="hud-btns">
+          <button class="btn hud-cam" id="hudCam" title="Switch camera: Third-person → Cockpit → Hood (C). B changes the third-person distance."><small>Camera · C</small><span id="hudCamName">Third-person · Far</span></button>
+          <button class="btn" id="hudReset">Reset · R</button>
+          <button class="btn btn-drive" id="hudExit">Garage · Esc</button>
+        </div>
+        <div class="hud-laps" id="hudLaps"><div><small id="hudLapLbl">Lap</small><b id="hudLap">—</b></div><div><small id="hudLastLbl">Last</small><b id="hudLast">—</b></div><div><small id="hudBestLbl">Best lap</small><b id="hudBest">—</b></div></div>
+      </div>
     </div>
-
-    <button class="pause-btn" id="pauseBtn" type="button" aria-label="Pause"><svg viewBox="0 0 24 24"><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg></button>
+    <div class="hud-count" id="hudCount"></div>
+    <div class="hud-aids" id="hudAids"><i id="aidABS">ABS</i><i id="aidTCS">TCS</i><i id="aidESP">ESP</i></div>
+    <div class="hud-speed"><b id="hudSpeed">0</b><small>km/h</small><i id="hudGearBox"><span id="hudGear">1</span></i></div>
 
     <div class="touch" id="touch" hidden>
       <div class="t-left">
-        <button type="button" data-touch="left" aria-label="Steer left"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
-        <button type="button" data-touch="right" aria-label="Steer right"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+        <button type="button" data-touch="left" aria-label="Steer left">◀</button>
+        <button type="button" data-touch="right" aria-label="Steer right">▶</button>
       </div>
       <div class="t-right">
-        <button type="button" class="t-hand" data-touch="hand">DRIFT</button>
-        <button type="button" class="t-brake" data-touch="down">BRAKE</button>
-        <button type="button" class="t-gas" data-touch="up">GAS</button>
+        <button type="button" class="t-hand" data-touch="hand">HAND<br>BRAKE</button>
+        <button type="button" class="t-brake" data-touch="back">BRAKE</button>
+        <button type="button" class="t-gas" data-touch="fwd">GAS</button>
       </div>
     </div>
   </div>
 
-  <!-- ===================================================== TITLE -->
-  <section class="screen" id="title">
-    <div class="title-card">
-      <div class="logo" aria-label="Apex Drift"><span>APEX</span><span class="logo-b">DRIFT</span></div>
-      <p class="tagline">Throw it sideways. Chain the corners. Don’t kiss the wall too hard.</p>
-      <div class="menu">
-        <button class="btn hot huge" type="button" data-go="setup">Race</button>
-        <button class="btn" type="button" data-go="help">How to play</button>
-        <button class="btn" type="button" data-go="settings">Settings</button>
-      </div>
-      <div class="xp" id="titleXp"></div>
-    </div>
-  </section>
-
-  <!-- ===================================================== SETUP -->
-  <section class="screen" id="setup" hidden>
-    <div class="setup">
-      <header class="setup-head">
-        <button class="btn ghost" type="button" data-go="title" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Back</button>
-        <h2>Race setup</h2>
-        <div class="xp" id="setupXp"></div>
-      </header>
-      <div class="setup-grid">
-        <div class="col">
-          <h3>Mode</h3>
-          <div class="modes" id="modes" role="radiogroup" aria-label="Mode"></div>
-          <h3>Track</h3>
-          <div class="tracks" id="tracks" role="radiogroup" aria-label="Track"></div>
-        </div>
-        <div class="col">
-          <h3>Car</h3>
-          <div class="garage">
-            <div class="car-view">
-              <button class="arrow" type="button" id="carPrev" aria-label="Previous car"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
-              <canvas id="carCanvas" width="520" height="300" aria-hidden="true"></canvas>
-              <button class="arrow" type="button" id="carNext" aria-label="Next car"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
-              <div class="lock" id="carLock" hidden></div>
-            </div>
-            <div class="car-info">
-              <div class="car-name"><b id="carName"></b><span id="carIdx" class="muted"></span></div>
-              <p class="muted" id="carTag"></p>
-              <div class="stats" id="carStats"></div>
-              <div class="paints" id="paints" role="radiogroup" aria-label="Paint"></div>
-            </div>
-          </div>
-          <button class="btn hot huge start" type="button" id="startBtn">Start</button>
-        </div>
+  <!-- ===================================================== results -->
+  <div class="drive-menu" id="results" role="dialog" aria-label="Run results">
+    <div class="drive-box result-box">
+      <div class="panel-head"><small id="resKicker">RUN COMPLETE</small><h2 id="resTitle">Finished</h2></div>
+      <div class="medal" id="resMedal"></div>
+      <p class="dm-note" id="resSub"></p>
+      <div class="res-stats" id="resStats"></div>
+      <div class="res-btns">
+        <button class="btn btn-drive" id="resAgain">Drift again</button>
+        <button class="btn" id="resClose">Back to garage</button>
       </div>
     </div>
-  </section>
+  </div>
 
-  <!-- ===================================================== PAUSE -->
-  <section class="screen modal" id="pause" hidden>
-    <div class="card">
-      <h2>Paused</h2>
-      <div class="menu">
-        <button class="btn hot" type="button" id="resumeBtn">Resume</button>
-        <button class="btn" type="button" id="restartBtn">Restart</button>
-        <button class="btn" type="button" id="endBtn" hidden>End session</button>
-        <button class="btn" type="button" data-go="settings">Settings</button>
-        <button class="btn ghost" type="button" id="quitBtn">Quit to menu</button>
-      </div>
-    </div>
-  </section>
+  <div class="toast" id="toast" role="status"></div>
+  <div class="loader" id="loader"><div class="loader-box"><span class="brand-mark"></span><b>APEX DRIFT</b><small id="loaderMsg">Warming up the tyres…</small></div></div>
 
-  <!-- ===================================================== RESULTS -->
-  <section class="screen modal" id="results" hidden>
-    <div class="card wide">
-      <div class="medal" id="rMedal"></div>
-      <h2 id="rTitle">Finished</h2>
-      <p class="muted" id="rSub"></p>
-      <div class="rstats" id="rStats"></div>
-      <div class="unlock" id="rUnlock" hidden></div>
-      <div class="menu row">
-        <button class="btn hot" type="button" id="againBtn">Race again</button>
-        <button class="btn" type="button" data-go="setup">Change car or track</button>
-        <button class="btn ghost" type="button" data-go="title">Menu</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================================================== SETTINGS -->
-  <section class="screen modal" id="settings" hidden>
-    <div class="card">
-      <h2>Settings</h2>
-      <div class="opts">
-        <div class="opt"><span>Sound</span><div class="seg" data-set="sound"><button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button></div></div>
-        <div class="opt"><span>Drift assist<small>Helps you countersteer and stops spins</small></span><div class="seg" data-set="assist"><button type="button" data-v="0">Off</button><button type="button" data-v="1">Normal</button><button type="button" data-v="2">Strong</button></div></div>
-        <div class="opt"><span>Camera<small>Or press C while driving</small></span><div class="seg" data-set="camera"><button type="button" data-v="fixed">Top-down</button><button type="button" data-v="chase">Chase</button></div></div>
-        <div class="opt"><span>Best-lap ghost<small>In Time Attack</small></span><div class="seg" data-set="ghost"><button type="button" data-v="true">On</button><button type="button" data-v="false">Off</button></div></div>
-      </div>
-      <div class="menu row">
-        <button class="btn hot" type="button" id="settingsDone">Done</button>
-        <button class="btn ghost danger" type="button" id="wipeBtn">Reset progress</button>
-      </div>
-    </div>
-  </section>
-
-  <!-- ===================================================== HELP -->
-  <section class="screen modal" id="help" hidden>
-    <div class="card wide">
-      <h2>How to play</h2>
-      <div class="help">
-        <div>
-          <h3>Drive</h3>
-          <table class="keys">
-            <tr><td><kbd>W</kbd> <kbd>↑</kbd></td><td>Throttle</td></tr>
-            <tr><td><kbd>S</kbd> <kbd>↓</kbd></td><td>Brake / reverse</td></tr>
-            <tr><td><kbd>A</kbd> <kbd>D</kbd> <kbd>←</kbd> <kbd>→</kbd></td><td>Steer</td></tr>
-            <tr><td><kbd>Space</kbd></td><td>Handbrake — kicks the tail out</td></tr>
-            <tr><td><kbd>R</kbd></td><td>Back on the track</td></tr>
-            <tr><td><kbd>C</kbd></td><td>Switch camera</td></tr>
-            <tr><td><kbd>M</kbd></td><td>Sound on / off</td></tr>
-            <tr><td><kbd>Esc</kbd> <kbd>P</kbd></td><td>Pause</td></tr>
-          </table>
-          <p class="muted small">Gamepads work too: stick to steer, triggers for throttle and brake, A for the handbrake. On a phone, use the on-screen buttons.</p>
-        </div>
-        <div>
-          <h3>Drift</h3>
-          <ol class="steps">
-            <li>Come into a corner fast and <b>tap the handbrake</b> while you turn in (or floor it in a powerful car).</li>
-            <li>Once the tail is out, <b>stay on the throttle</b> and steer to hold the angle. Let go of the steering to straighten up.</li>
-            <li>Points grow with <b>speed and angle</b>. Keep sliding to raise the <b>multiplier</b> up to ×5.</li>
-            <li>Straighten up for a moment and the combo is <b>banked</b>. Hit a wall hard or run onto the grass and it’s <b>lost</b>.</li>
-            <li>Drift with your rear bumper close to a wall for a <b>×1.5 Wall Kiss</b> bonus.</li>
-          </ol>
-          <p class="muted small">Every point you score is XP. XP unlocks new cars.</p>
-        </div>
-      </div>
-      <div class="menu row"><button class="btn hot" type="button" data-back>Got it</button></div>
-    </div>
-  </section>
-
-  <div class="rotate" id="rotate">Turn your phone sideways to play</div>
   <script type="module" src="js/main.js"></script>
+  <script>
+    if (location.protocol === 'file:') {
+      document.getElementById('loaderMsg').innerHTML =
+        'This game must be served over http.<br>Run <b>node server.js</b> in the site folder and open <b>http://localhost:5173</b>.';
+    }
+  </script>
 </body>
 </html>
